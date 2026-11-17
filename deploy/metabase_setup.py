@@ -217,7 +217,7 @@ def embebido(lista: list[dict]) -> None:
         print("AVISO: no se pudo activar el embebido en Metabase; los tableros no se mostrarán en el portal")
         return
     r = S.get(f"{MB}/api/setting/embedding-secret-key", timeout=60)
-    secreto = r.json() if r.status_code == 200 and r.text.strip() else None
+    secreto = r.text.strip().strip('"') if r.status_code == 200 else ""  # Metabase la devuelve como texto plano
     if not secreto:
         secreto = secrets.token_hex(32)
         ajuste("embedding-secret-key", secreto)
