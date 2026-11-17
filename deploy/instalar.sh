@@ -41,12 +41,24 @@ agregar SITIO_SECRETO "$(secreto)$(secreto)"
 # 1 cuando el sitio se publique solo por HTTPS (proxy reverso): la cookie de sesión viaja solo cifrada.
 agregar SITIO_HTTPS 0
 # URL con la que se entra al portal (la del proxy reverso cuando exista). Metabase la usa para incrustar tableros.
+agregar SONAR_DB_PASSWORD "$(secreto)"
+agregar SONAR_ADMIN_PASSWORD "$(secreto)Aa1@"
 agregar SITIO_URL "http://localhost:$(sed -n 's/^SITIO_PORT=//p' .env)"
 
 if ! grep -q '^FIS_GH_TOKEN=.\+' .env; then
   echo "Falta FIS_GH_TOKEN en deploy/.env: edítelo y vuelva a ejecutar." >&2
   exit 1
 fi
+
+# Base de datos de SonarQube dentro del mismo PostgreSQL (idempotente).
+docker compose up -d postgres
+until docker compose exec -T postgres pg_isready -U fis -d fis >/dev/null 2>&1; do sleep 2; done
+sonar_pw="$(sed -n 's/^SONAR_DB_PASSWORD=//p' .env)"
+docker compose exec -T postgres psql -q -U fis -d fis -v ON_ERROR_STOP=1 -v pw="$sonar_pw" <<'SQL'
+SELECT format('CREATE ROLE sonar LOGIN PASSWORD %L', :'pw') WHERE NOT EXISTS (SELECT FROM pg_roles WHERE rolname = 'sonar') \gexec
+SELECT format('ALTER ROLE sonar PASSWORD %L', :'pw') \gexec
+SELECT 'CREATE DATABASE sonar OWNER sonar' WHERE NOT EXISTS (SELECT FROM pg_database WHERE datname = 'sonar') \gexec
+SQL
 
 docker compose up -d --build --remove-orphans
 
@@ -59,6 +71,8 @@ until [ "$(docker inspect -f '{{.State.Health.Status}}' "$(docker compose ps -q 
 done
 
 docker compose exec -T revisor python /app/deploy/metabase_setup.py
+echo "Configurando el SonarQube del curso (la primera vez tarda unos minutos)..."
+docker compose exec -T -e SONAR_ADMIN_PASSWORD="$(sed -n 's/^SONAR_ADMIN_PASSWORD=//p' .env)" revisor python /app/deploy/sonar_setup.py
 
 psitio="$(sed -n 's/^SITIO_PORT=//p' .env)"
 echo

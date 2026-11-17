@@ -64,6 +64,15 @@ def revisar_repo(gh: GitHub, llm: DeepSeek, cfg: dict, repo: str, entrega: str, 
             ev = json.load(f)
     else:
         ev = collect(gh, repo, hasta, con_wiki=not args.sin_wiki)
+    if getattr(args, "sonar_interno", False):
+        from . import sonar_interno
+
+        print(f"  {repo}: análisis interno con el SonarQube del curso…", flush=True)
+        ev["sonar_interno"] = sonar_interno.analizar(ev, entrega)
+        if ev["sonar_interno"] is not None:
+            ev["sonar_interno"]["entrega"] = entrega
+        if ev["sonar_interno"] and ev["sonar_interno"].get("error"):
+            print(f"  {repo}: Sonar interno: {ev['sonar_interno']['error']}", flush=True)
     res = checks.evaluar(rubrica, ev, cfg)
     res["uso_ia"] = ia.refinar(gh, repo, res["uso_ia"])
     if args.ia:
@@ -161,6 +170,7 @@ def main(argv=None) -> int:
         s.add_argument("--ia", action="store_true", help="usar DeepSeek para los criterios cualitativos")
         s.add_argument("--publicar", action="store_true", help="comentar el informe formativo en el repo del equipo")
         s.add_argument("--sin-wiki", action="store_true")
+        s.add_argument("--sonar-interno", action="store_true", help="analizar el código con el SonarQube del curso")
     sub.add_parser("trabajador", help="atender la cola de revisiones del portal (y la revisión programada)")
     s = sub.add_parser("usuario", help="administrar cuentas del portal (también se hace desde el portal)")
     s.add_argument("accion", choices=["agregar", "quitar", "listar"])

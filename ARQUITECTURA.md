@@ -113,6 +113,25 @@ no aparece, `<org>_<repo>` y `<repo>`) y consulta, en SonarCloud y en el SonarQu
 
 El resultado queda en `fis.sonar` (una fila por repo) y en el portal: tabla en el Panorama y en cada equipo.
 
+### Análisis interno con el SonarQube del curso (`reviewer/sonar_interno.py`)
+
+Para la revisión interna del profesor, el stack incluye un **SonarQube Community** propio
+(servicio `sonarqube`, base `sonar` en el mismo PostgreSQL, publicado solo dentro del portal en
+`/sonar/`). Cuando una revisión se pide con «Sonar interno», el agente:
+
+1. descarga el repo del equipo **en el commit de la fecha de corte** (clon superficial, en una
+   carpeta temporal que se borra al terminar);
+2. ignora la configuración de Sonar que traiga el equipo y analiza todo el código con el **perfil
+   común del curso** (proyecto `fis-interno_<repo>`);
+3. espera a que SonarQube procese el informe y guarda medidas, quality gate y problemas en
+   `fis.sonar_interno`, con el commit analizado.
+
+El código de los estudiantes **no se ejecuta**: no se compila, no se instalan dependencias y el
+escáner corre sin las credenciales del agente (solo con el token de análisis). Por eso no mide
+cobertura y las reglas de Java que requieren bytecode no aplican. `deploy/sonar_setup.py` cambia la
+contraseña inicial del administrador, genera el token del agente y deja la lectura sin segunda
+cuenta, porque a SonarQube solo se llega con sesión del portal.
+
 ## Portal del profesor (aplicación web sobre PostgreSQL)
 
 `reviewer/portal.py` es una aplicación Flask (gunicorn) que arma cada página en el momento con los

@@ -38,6 +38,7 @@ CREATE TABLE IF NOT EXISTS portal.solicitudes (
     estado text NOT NULL DEFAULT 'pendiente', inicio timestamptz, fin timestamptz, codigo int,
     cancelar boolean NOT NULL DEFAULT false, log text NOT NULL DEFAULT ''
 );
+ALTER TABLE portal.solicitudes ADD COLUMN IF NOT EXISTS sonar_interno boolean NOT NULL DEFAULT false;
 CREATE INDEX IF NOT EXISTS solicitudes_estado ON portal.solicitudes (estado, id);
 """
 

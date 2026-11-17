@@ -23,6 +23,7 @@ cierra la sesión. Todo lo que se ve sale en el momento de la base de datos.
 | Seguir una revisión | **Revisiones → #n**: estado, duración y registro en vivo; se puede cancelar |
 | Ver con qué se evalúa cada entrega | **Rúbricas**: criterios, pesos, niveles y qué verifica el agente; los administradores las editan |
 | Ver los tableros de Metabase | **Tableros** (incrustados, con filtros por equipo y entrega) |
+| Revisar la calidad del código con las mismas reglas para todos | **Sonar** (SonarQube del curso incrustado). Pida la revisión con «Sonar interno»: analiza el commit de la fecha de corte, aunque el equipo no tenga Sonar |
 | Cambiar fechas de corte, equipos o la revisión programada | **Administración** |
 | Dar acceso a un colega | **Administración → Nuevo usuario** (la contraseña se muestra una sola vez) |
 | Cambiar su contraseña | Su nombre, arriba a la derecha → **Mi cuenta** |

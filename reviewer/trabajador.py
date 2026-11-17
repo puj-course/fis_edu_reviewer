@@ -42,13 +42,14 @@ def programar(con) -> None:
         return
     horas = int(prog.get("intervalo_horas") or os.environ.get("INTERVALO_HORAS") or 24)
     con_ia = bool(prog.get("con_ia", True)) and bool(os.environ.get("DEEPSEEK_API_KEY"))
+    sonar = bool(prog.get("sonar_interno", True)) and bool(_uno(con, "SELECT 1 FROM portal.config WHERE clave = 'sonar_interno'"))
     with con.transaction():
         _uno(con, "SELECT pg_advisory_xact_lock(424244)")
         reciente = _uno(con, """SELECT 1 FROM portal.solicitudes WHERE origen = 'programada'
                                  AND (estado IN ('pendiente', 'en_curso') OR creada > now() - make_interval(hours => %s))""", horas)
         if not reciente:
-            fila = _uno(con, """INSERT INTO portal.solicitudes (usuario, origen, alcance, entrega, con_ia)
-                                VALUES ('agente', 'programada', 'todos', 'auto', %s) RETURNING id""", con_ia)
+            fila = _uno(con, """INSERT INTO portal.solicitudes (usuario, origen, alcance, entrega, con_ia, sonar_interno)
+                                VALUES ('agente', 'programada', 'todos', 'auto', %s, %s) RETURNING id""", con_ia, sonar)
             print(f"Revisión programada encolada: #{fila[0]}", flush=True)
 
 
@@ -56,19 +57,19 @@ def tomar(con):
     return _uno(con, """UPDATE portal.solicitudes SET estado = 'en_curso', inicio = now()
                         WHERE id = (SELECT id FROM portal.solicitudes WHERE estado = 'pendiente' ORDER BY id
                                     LIMIT 1 FOR UPDATE SKIP LOCKED)
-                        RETURNING id, alcance, entrega, con_ia""")
+                        RETURNING id, alcance, entrega, con_ia, sonar_interno""")
 
 
-def comando(alcance: str, entrega: str, con_ia: bool) -> list[str]:
+def comando(alcance: str, entrega: str, con_ia: bool, sonar: bool = False) -> list[str]:
     salida = os.path.join(os.environ.get("FIS_SALIDA", "/datos"), dt.date.today().isoformat())
     cmd = [sys.executable, "-m", "reviewer"]
     cmd += ["revisar-todos"] if alcance == "todos" else ["revisar", "--repo", alcance]
     cmd += ["--entrega", entrega, "--salida", salida]
-    return cmd + (["--ia"] if con_ia else [])
+    return cmd + (["--ia"] if con_ia else []) + (["--sonar-interno"] if sonar else [])
 
 
-def correr(con, sid: int, alcance: str, entrega: str, con_ia: bool) -> None:
-    cmd = comando(alcance, entrega, con_ia)
+def correr(con, sid: int, alcance: str, entrega: str, con_ia: bool, sonar: bool = False) -> None:
+    cmd = comando(alcance, entrega, con_ia, sonar)
     print(f"Solicitud #{sid}: {' '.join(cmd[2:])}", flush=True)
     proc = subprocess.Popen(cmd, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True, bufsize=1,
                             env={**os.environ, "PYTHONUNBUFFERED": "1"})

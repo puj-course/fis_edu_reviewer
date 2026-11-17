@@ -111,6 +111,14 @@ CREATE TABLE IF NOT EXISTS fis.sonar (
     actualizado timestamptz DEFAULT now()
 );
 
+CREATE TABLE IF NOT EXISTS fis.sonar_interno (
+    repo text PRIMARY KEY, equipo text NOT NULL, servidor text, clave text, url text, quality_gate text,
+    condiciones_fallidas text, analisis int, dias_con_analisis int, ultimo_analisis date, pipelines int,
+    pipeline_ok boolean, cobertura numeric, bugs int, vulnerabilidades int, code_smells int, hotspots int,
+    duplicacion numeric, deuda_min int, mantenibilidad text, fiabilidad text, seguridad text, lineas int,
+    actualizado timestamptz DEFAULT now(), commit text, entrega text, error text
+);
+
 -- Vistas para los tableros: siempre la revisión más reciente de cada equipo y entrega.
 CREATE OR REPLACE VIEW fis.v_revision_actual AS
     SELECT DISTINCT ON (repo, entrega) * FROM fis.revisiones ORDER BY repo, entrega, id DESC;
@@ -233,26 +241,35 @@ class Almacen:
             self._hechos(cur, ev, cfg, repo, equipo)
 
     @staticmethod
-    def _sonar(cur, s: dict | None, repo: str, equipo: str) -> None:
-        cur.execute("DELETE FROM fis.sonar WHERE repo = %s", (repo,))
+    def _sonar(cur, s: dict | None, repo: str, equipo: str, tabla: str = "fis.sonar", extra: tuple = ()) -> None:
+        if tabla == "fis.sonar_interno" and s is None:
+            return  # sin análisis interno en esta revisión: se conserva el último
+        cur.execute(f"DELETE FROM {tabla} WHERE repo = %s", (repo,))
         if not s:
             return
         m, an, wf = s.get("medidas") or {}, s.get("analisis") or {}, s.get("pipeline") or []
         num = lambda k, f=float: f(float(m[k])) if m.get(k) not in (None, "") else None
         letra = lambda k: {"1.0": "A", "2.0": "B", "3.0": "C", "4.0": "D", "5.0": "E"}.get(str(m.get(k))) if m.get(k) else None
-        cur.execute(
-            "INSERT INTO fis.sonar VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s)",
-            (repo, equipo, s.get("servidor"), s.get("clave"), s.get("url"), s.get("quality_gate"),
+        columnas = ("repo, equipo, servidor, clave, url, quality_gate, condiciones_fallidas, analisis, dias_con_analisis, "
+                    "ultimo_analisis, pipelines, pipeline_ok, cobertura, bugs, vulnerabilidades, code_smells, hotspots, "
+                    "duplicacion, deuda_min, mantenibilidad, fiabilidad, seguridad, lineas")
+        if extra:
+            columnas += ", commit, entrega, error"
+        valores = (repo, equipo, s.get("servidor"), s.get("clave"), s.get("url"), s.get("quality_gate"),
              "; ".join(s.get("condiciones_fallidas") or []) or None, an.get("hasta_corte"), an.get("dias_con_analisis"),
              an.get("ultimo"), len(wf), any(w.get("ultima") == "success" for w in wf) if wf else None,
              num("coverage"), num("bugs", int), num("vulnerabilities", int), num("code_smells", int),
              num("security_hotspots", int), num("duplicated_lines_density"), num("sqale_index", int),
-             letra("sqale_rating"), letra("reliability_rating"), letra("security_rating"), num("ncloc", int)),
-        )
+             letra("sqale_rating"), letra("reliability_rating"), letra("security_rating"), num("ncloc", int))
+        cur.execute(f"INSERT INTO {tabla} ({columnas}) VALUES ({', '.join(['%s'] * (len(valores) + len(extra)))})", valores + extra)
 
     def _hechos(self, cur, ev: dict, cfg: dict, repo: str, equipo: str) -> None:
         c = Contexto(ev, cfg)
         self._sonar(cur, ev.get("sonar"), repo, equipo)
+        si = ev.get("sonar_interno")
+        if si is not None:
+            self._sonar(cur, si if not si.get("error") else {"servidor": "SonarQube del curso"}, repo, equipo,
+                        "fis.sonar_interno", (si.get("commit"), si.get("entrega"), si.get("error")))
         for tabla in ("commits", "issues", "pull_requests", "pipelines", "milestones"):
             cur.execute(f"DELETE FROM fis.{tabla} WHERE repo = %s", (repo,))
         cur.executemany(

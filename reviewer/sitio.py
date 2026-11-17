@@ -102,7 +102,7 @@ footer{color:var(--mut);font-size:12px;text-align:center;padding:24px 16px;borde
 @media (max-width:600px){.hero h1{font-size:23px}.marca .c{font-size:16px}.kpi .v{font-size:24px}}
 """
 
-NAV = [("", "Panorama"), ("revisiones", "Revisiones"), ("rubricas", "Rúbricas"), ("tableros", "Tableros"),
+NAV = [("", "Panorama"), ("revisiones", "Revisiones"), ("rubricas", "Rúbricas"), ("tableros", "Tableros"), ("calidad", "Sonar"),
        ("estudiantes", "Estudiantes"), ("ia", "Uso de IA"), ("agente", "El agente")]
 
 
@@ -318,6 +318,20 @@ def _enlace_sonar(s: dict) -> str:
     return f'<a href="{E(s["url"])}/dashboard?id={E(s["clave"])}">{E(s["servidor"])}</a>'
 
 
+def _fila_interno(s: dict, r: str, enlace_equipo: str = "") -> list:
+    """Fila del análisis interno: enlaza al SonarQube del curso publicado en el portal (/sonar/)."""
+    if s.get("error"):
+        return ([enlace_equipo] if enlace_equipo else []) + [f'<span class="chip bad">falló</span> {E(s["error"][:160])}'] + [""] * 7
+    fila = _fila_sonar({**s, "url": None})
+    fila[0] = f'<a href="{r}sonar/dashboard?id={E(s["clave"])}">perfil del curso</a> · <code>{E((s.get("commit") or "")[:7])}</code>'
+    fila[-1] = f'{E(s.get("entrega") or "")} · {s["actualizado"]:%d/%m %H:%M}' if s.get("actualizado") else "—"
+    return ([enlace_equipo] if enlace_equipo else []) + fila
+
+
+ENC_INTERNO = ["Análisis", "Quality gate", "Cobertura*", "Mant. · Fiab. · Seg.", "Bugs / Vuln. / Smells / Hotspots",
+               "Deuda técnica", "Duplicación", "Entrega · fecha"]
+
+
 def _fila_sonar(s: dict, enlace_equipo: str = "") -> list:
     deuda = int(s.get("deuda_min") or 0)
     nw = lambda x: f'<span style="white-space:nowrap">{x}</span>'
@@ -426,7 +440,7 @@ class Datos:
         self.revisiones = q("SELECT * FROM fis.v_revision_actual ORDER BY equipo, entrega")
         self.vacio = not self.revisiones
         if self.vacio:
-            self.rev_eq, self.equipo_de, self.sonar_eq = {}, {}, {}
+            self.rev_eq, self.equipo_de, self.sonar_eq, self.sonar_int = {}, {}, {}, {}
             return
         historia = q("""SELECT DISTINCT ON (equipo, entrega, revisada::date) equipo, entrega, entrega_nombre,
                                revisada::date AS dia, pre_nota
@@ -447,6 +461,7 @@ class Datos:
                                   row_number() OVER (PARTITION BY repo, login ORDER BY fecha DESC) AS n
                            FROM fis.commits WHERE NOT es_merge) t WHERE n <= 12""")
         self.sonar_eq = {r["equipo"]: r for r in q("SELECT * FROM fis.sonar")}
+        self.sonar_int = {r["equipo"]: r for r in q("SELECT * FROM fis.sonar_interno")}
         self.actividad = {r["equipo"]: r for r in q("""
             SELECT equipo, count(*) FILTER (WHERE NOT es_merge) AS commits,
                    round(100.0 * avg(convencional::int) FILTER (WHERE NOT es_merge)) AS conv,
@@ -543,6 +558,10 @@ def panorama(d: Datos, cfg: dict, r: str) -> str:
 <h2>Calidad del código (Sonar)</h2><p class="mut">Resultados de los análisis que corre el pipeline de cada equipo.
 Bugs / vulnerabilidades / code smells / security hotspots abiertos. Calificaciones de A (mejor) a E.</p>
 {_tabla(["Equipo"] + ENC_SONAR, [_fila_sonar(d.sonar_eq[eq], f'<a href="{r}equipos/{E(eq)}">{E(eq)}</a>') for eq in d.rev_eq if eq in d.sonar_eq])}
+<h2>Sonar interno (perfil común del curso)</h2><p class="mut">Análisis del agente en el commit de la fecha de corte, con las
+mismas reglas para todos. *Sin compilar ni ejecutar pruebas: no mide cobertura. <a href="{r}calidad">Abrir SonarQube</a>.</p>
+{_tabla(["Equipo"] + ENC_INTERNO, [_fila_interno(d.sonar_int[eq], r, f'<a href="{r}equipos/{E(eq)}">{E(eq)}</a>') for eq in d.rev_eq if eq in d.sonar_int])
+ if d.sonar_int else f'<p class="mut">Aún no hay análisis internos. Pídalos en <a href="{r}revisiones">Revisiones</a> con «Sonar interno».</p>'}
 <h2>Equipos</h2><div class="grid">{''.join(tarjetas)}</div>
 <h2>Hallazgos principales (última entrega revisada)</h2>{_tabla(['Equipo', 'Entrega', 'Lo que no se cumple'], hallazgos)}""")
 
@@ -631,7 +650,10 @@ def equipo(d: Datos, r: str, eq: str, acciones: str = "") -> str | None:
             + f"""<div class="g2" style="margin-top:14px"><div class="card"><h3>Reparto de commits</h3>{dona}</div>
 <div class="card"><h3>Commits por semana</h3>{_barras(sorted(por_sem.items()))}</div></div>
 <h2>Integrantes</h2>{_tabla(['Estudiante', 'Commits', 'Semanas', 'Issues cerradas', 'PRs', 'Revisiones', 'Líneas', 'Factor sugerido'], integrantes, {1, 3, 4, 5, 6, 7})}
-<h2>Calidad del código (Sonar)</h2>{_tabla(ENC_SONAR, [_fila_sonar(d.sonar_eq[eq])]) if eq in d.sonar_eq else '<p class="mut">El equipo no tiene Sonar configurado o el agente no pudo leer sus resultados.</p>'}
+<h2>Calidad del código (Sonar del equipo)</h2>{_tabla(ENC_SONAR, [_fila_sonar(d.sonar_eq[eq])]) if eq in d.sonar_eq else '<p class="mut">El equipo no tiene Sonar configurado o el agente no pudo leer sus resultados.</p>'}
+<h2>Sonar interno (perfil común del curso)</h2>{(_tabla(ENC_INTERNO, [_fila_interno(d.sonar_int[eq], r)])
+ + (f'<iframe class="tablero" style="min-height:900px;margin-top:12px" src="{r}sonar/dashboard?id={E(d.sonar_int[eq]["clave"])}" title="SonarQube" loading="lazy"></iframe>'
+    if d.sonar_int[eq].get("clave") else "")) if eq in d.sonar_int else '<p class="mut">Sin análisis interno todavía.</p>'}
 <div class="g2" style="margin-top:6px"><div><h2>Uso de IA {_chip_ia(di, ii)}</h2><ul class="lst">{ia_items or '<li class="mut">Sin señales.</li>'}</ul></div>
 <div><h2>Señales de proceso</h2><ul class="lst">{sn or '<li class="mut">Ninguna.</li>'}</ul></div></div>
 {''.join(secciones)}""")

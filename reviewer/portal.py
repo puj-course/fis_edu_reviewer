@@ -187,6 +187,10 @@ def repos_del_periodo(cfg: dict) -> tuple[list[dict], str | None]:
     return datos, error
 
 
+def sonar_configurado() -> bool:
+    return bool(q("SELECT 1 FROM portal.config WHERE clave = 'sonar_interno'"))
+
+
 # ---------------------------------------------------------------- Metabase
 def _b64(b: bytes) -> str:
     return base64.urlsafe_b64encode(b).rstrip(b"=").decode()
@@ -391,7 +395,8 @@ def crear_app() -> Flask:
         r = raiz()
         acciones = (f'<form method="post" action="{r}revisiones" class="enlinea">{campo_csrf()}'
                     f'<input type="hidden" name="alcance" value="{E(d.repo_de.get(eq, ""))}"><input type="hidden" name="entrega" value="auto">'
-                    f'<input type="hidden" name="con_ia" value="1"><button class="btn">Revisar este equipo ahora</button></form>') if eq in d.repo_de else ""
+                    f'<input type="hidden" name="con_ia" value="1"><input type="hidden" name="sonar_interno" value="{1 if sonar_configurado() else 0}">'
+                    f'<button class="btn">Revisar este equipo ahora</button></form>') if eq in d.repo_de else ""
         cuerpo = sitio.equipo(d, r, eq, acciones)
         if cuerpo is None:
             abort(404)
@@ -413,12 +418,15 @@ def crear_app() -> Flask:
         if not repos:
             opciones_rep = "".join(f'<option value="{E(rp)}">{E(eq)}</option>' for eq, rp in d.repo_de.items())
         con_ia = bool((os.environ.get("FIS_IA_DISPONIBLE") or os.environ.get("DEEPSEEK_API_KEY")))
+        hay_sonar = sonar_configurado()
         form = f"""<div class="card"><form method="post" action="{r}revisiones" class="f">{campo_csrf()}<div class="campos">
 <div><label for="a">Qué revisar</label><select id="a" name="alcance"><option value="todos">Todos los equipos del período</option>{opciones_rep}</select></div>
 <div><label for="e">Rúbrica</label><select id="e" name="entrega"><option value="auto">La próxima entrega (automático)</option>{opciones_ent}
 <option value="todas">Las tres entregas</option></select></div>
 <div><label for="i">Capa de IA</label><select id="i" name="con_ia"><option value="1"{'' if con_ia else ' disabled'}>Con IA (criterios cualitativos y preguntas)</option>
-<option value="0"{'' if con_ia else ' selected'}>Solo indicadores (más rápido)</option></select></div></div>
+<option value="0"{'' if con_ia else ' selected'}>Solo indicadores (más rápido)</option></select></div>
+<div><label for="s">Sonar interno</label><select id="s" name="sonar_interno"><option value="1"{'' if hay_sonar else ' disabled'}>Analizar con el perfil del curso</option>
+<option value="0"{'' if hay_sonar else ' selected'}>No</option></select></div></div>
 <div><button class="btn">Solicitar revisión</button> <span class="mut" style="font-size:13px">Queda en cola y se ejecuta en orden; cada solicitud guarda su registro.</span></div>
 </form></div>"""
         filas_rep = []
@@ -430,12 +438,13 @@ def crear_app() -> Flask:
                       else '<span class="chip ok">al día</span>' if rev else '<span class="chip neu">sin revisar</span>')
             boton = (f'<form method="post" action="{r}revisiones" class="enlinea">{campo_csrf()}<input type="hidden" name="alcance" value="{E(x["repo"])}">'
                      f'<input type="hidden" name="entrega" value="auto"><input type="hidden" name="con_ia" value="{1 if con_ia else 0}">'
+                     f'<input type="hidden" name="sonar_interno" value="{1 if hay_sonar else 0}">'
                      f'<button class="btn peq">Revisar</button></form>') if not x["excluido"] else '<span class="mut">excluido</span>'
             filas_rep.append([f'<a href="{r}equipos/{E(x["equipo"])}">{E(x["equipo"])}</a>', f"{push:%d/%m/%Y %H:%M}" if push else "—",
                               f"{rev:%d/%m/%Y %H:%M}" if rev else "—", estado, boton])
-        sol = q("SELECT id, creada, usuario, origen, alcance, entrega, con_ia, estado, inicio, fin FROM portal.solicitudes ORDER BY id DESC LIMIT 40")
+        sol = q("SELECT id, creada, usuario, origen, alcance, entrega, con_ia, sonar_interno, estado, inicio, fin FROM portal.solicitudes ORDER BY id DESC LIMIT 40")
         filas_sol = [[f'<a href="{r}revisiones/{s["id"]}">#{s["id"]}</a>', f'{s["creada"]:%d/%m %H:%M}', E(s["usuario"]),
-                      E(s["alcance"].split("/")[-1] if s["alcance"] != "todos" else "todos"), E(s["entrega"]), "sí" if s["con_ia"] else "no",
+                      E(s["alcance"].split("/")[-1] if s["alcance"] != "todos" else "todos"), E(s["entrega"]), ("IA" if s["con_ia"] else "—") + (" · Sonar" if s["sonar_interno"] else ""),
                       chip_estado(s["estado"]),
                       _duracion(s["inicio"], s["fin"])] for s in sol]
         activos = any(s["estado"] in ("pendiente", "en_curso") for s in sol)
@@ -444,7 +453,7 @@ def crear_app() -> Flask:
                   + form + (f'<div class="flash bad">{E(error)}</div>' if error else "")
                   + "<h2>Estado de los repositorios</h2><p class='mut'>Último push en GitHub frente a la última revisión del agente.</p>"
                   + _tabla(["Equipo", "Último push", "Última revisión", "Estado", ""], filas_rep)
-                  + "<h2>Historial de solicitudes</h2>" + _tabla(["#", "Creada", "Por", "Alcance", "Rúbrica", "IA", "Estado", "Duración"], filas_sol))
+                  + "<h2>Historial de solicitudes</h2>" + _tabla(["#", "Creada", "Por", "Alcance", "Rúbrica", "Extras", "Estado", "Duración"], filas_sol))
         return responder("Revisiones", cuerpo, "revisiones", refrescar=10 if activos else 0)
 
     @app.post("/revisiones")
@@ -453,13 +462,14 @@ def crear_app() -> Flask:
         alcance = request.form.get("alcance", "todos")
         entrega = request.form.get("entrega", "auto")
         con_ia = request.form.get("con_ia") == "1" and bool((os.environ.get("FIS_IA_DISPONIBLE") or os.environ.get("DEEPSEEK_API_KEY")))
+        sonar = request.form.get("sonar_interno") == "1" and sonar_configurado()
         if entrega not in ("auto", "todas") and entrega not in c["entregas"]:
             abort(400)
         if alcance != "todos" and not (alcance.startswith(c["org"] + "/") and alcance.split("/")[-1].startswith(c["repo_prefijo"])):
             abort(400)
-        fila = ejecutar("""INSERT INTO portal.solicitudes (usuario, alcance, entrega, con_ia) VALUES (%s,%s,%s,%s) RETURNING id""",
-                        g.usuario["login"], alcance, entrega, con_ia)[0]
-        auditar("solicitud_revision", f"#{fila['id']} {alcance} {entrega} ia={con_ia}")
+        fila = ejecutar("""INSERT INTO portal.solicitudes (usuario, alcance, entrega, con_ia, sonar_interno) VALUES (%s,%s,%s,%s,%s) RETURNING id""",
+                        g.usuario["login"], alcance, entrega, con_ia, sonar)[0]
+        auditar("solicitud_revision", f"#{fila['id']} {alcance} {entrega} ia={con_ia} sonar={sonar}")
         avisar(f"Solicitud #{fila['id']} en cola. Esta página se actualiza sola mientras se ejecuta.")
         return redirect(raiz() + f"revisiones/{fila['id']}")
 
@@ -477,7 +487,7 @@ def crear_app() -> Flask:
         cuerpo = (_hero(f'<a href="{r}revisiones">Revisiones</a>', f"Solicitud #{sid}",
                         f"{chip_estado(s['estado'])} · pedida por {E(s['usuario'])} el {s['creada']:%d/%m/%Y %H:%M}"
                         + (f" · {cola} solicitud(es) antes en la cola" if cola else ""), cancelar)
-                  + _kpis([(E(s["alcance"].split("/")[-1]), "alcance"), (E(s["entrega"]), "rúbrica"), ("sí" if s["con_ia"] else "no", "con IA"),
+                  + _kpis([(E(s["alcance"].split("/")[-1]), "alcance"), (E(s["entrega"]), "rúbrica"), ("sí" if s["con_ia"] else "no", "con IA"), ("sí" if s["sonar_interno"] else "no", "Sonar interno"),
                            (_duracion(s["inicio"], s["fin"]), "duración")])
                   + f'<h2>Registro</h2><pre class="log">{E(s["log"] or "Esperando turno…")}</pre>'
                   + (f'<p><a class="btn sec" href="{r}">Ver el panorama actualizado</a></p>' if s["estado"] == "terminada" else ""))
@@ -600,6 +610,23 @@ def crear_app() -> Flask:
                   + f'<iframe class="tablero" src="{E(src)}" title="{E(actual["nombre"])}" loading="lazy"></iframe>')
         return responder("Tableros", cuerpo, "tableros")
 
+    # ------------------------------------------------------------ SonarQube del curso
+    @app.get("/calidad")
+    def calidad():
+        r = raiz()
+        if not sonar_configurado():
+            cuerpo = _hero("Calidad del código", "Sonar interno") + ('<div class="aviso">El SonarQube del curso aún no está configurado. '
+                                                                     'Ejecute <code>sh deploy/instalar.sh</code> en el servidor.</div>')
+            return responder("Sonar", cuerpo, "calidad")
+        filas = q("SELECT equipo, clave, quality_gate, commit, entrega, actualizado, error FROM fis.sonar_interno ORDER BY equipo")
+        pestanas = " ".join(f'<a class="btn sec peq" href="{r}equipos/{E(x["equipo"])}">{E(x["equipo"])}</a>' for x in filas)
+        cuerpo = (_hero("Revisión interna del profesor", "Sonar interno",
+                        "SonarQube del curso: el agente analiza cada equipo en el commit de la fecha de corte con el mismo perfil de calidad. "
+                        "Sin compilar ni ejecutar pruebas (no mide cobertura; las reglas de Java que requieren bytecode no aplican).")
+                  + (f'<div class="fila" style="justify-content:flex-start;gap:8px;margin-bottom:12px">{pestanas}</div>' if filas else "")
+                  + f'<iframe class="tablero" src="{r}sonar/projects" title="SonarQube del curso" loading="lazy"></iframe>')
+        return responder("Sonar", cuerpo, "calidad")
+
     # ------------------------------------------------------------ cuenta propia
     @app.route("/cuenta", methods=["GET", "POST"])
     def cuenta():
@@ -659,7 +686,9 @@ def crear_app() -> Flask:
 <option value="0"{'' if prog.get('activa', True) else ' selected'}>Pausada (solo bajo demanda)</option></select></div>
 <div><label for="pi">Cada cuántas horas</label><input id="pi" type="number" min="1" max="168" name="prog_horas" value="{int(prog.get('intervalo_horas', 24))}"></div>
 <div><label for="pc">Con IA</label><select id="pc" name="prog_ia"><option value="1"{' selected' if prog.get('con_ia', True) else ''}>Sí</option>
-<option value="0"{'' if prog.get('con_ia', True) else ' selected'}>No</option></select></div></div>
+<option value="0"{'' if prog.get('con_ia', True) else ' selected'}>No</option></select></div>
+<div><label for="ps">Con Sonar interno</label><select id="ps" name="prog_sonar"><option value="1"{' selected' if prog.get('sonar_interno', True) else ''}>Sí</option>
+<option value="0"{'' if prog.get('sonar_interno', True) else ' selected'}>No</option></select></div></div>
 <div><button class="btn">Guardar configuración</button> <a class="btn sec" href="{r}admin/avanzado">Configuración avanzada (YAML)</a></div></form>"""
         usuarios = q("SELECT login, nombre, rol, activo, creado, ultimo_ingreso FROM portal.usuarios ORDER BY rol, login")
         filas_u = []
@@ -704,7 +733,7 @@ def crear_app() -> Flask:
             c["repos_excluir"] = sorted(x["equipo"] for x in repos if x["equipo"] not in incluidos)
         c["ignorar_usuarios"] = [x.strip() for x in f.get("ignorar", "").split(",") if x.strip()]
         c["programacion"] = {"activa": f.get("prog_activa") == "1", "intervalo_horas": max(1, min(168, int(f.get("prog_horas") or 24))),
-                             "con_ia": f.get("prog_ia") == "1"}
+                             "con_ia": f.get("prog_ia") == "1", "sonar_interno": f.get("prog_sonar") == "1"}
         errores = configuracion.validar_curso(c)
         if errores:
             avisar("No se guardó: " + " ".join(errores), "bad")

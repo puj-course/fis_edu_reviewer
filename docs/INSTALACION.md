@@ -39,7 +39,7 @@ Necesita dos credenciales, que nunca se suben al repositorio:
 
 2. **Clave de la API de DeepSeek** (opcional: sin ella el agente trabaja solo con indicadores).
 
-3. **Sonar** (opcional). Con proyectos públicos en SonarCloud no hace falta nada. Para proyectos
+3. **Sonar del equipo** (opcional). Con proyectos públicos en SonarCloud no hace falta nada. Para proyectos
    privados de SonarCloud, `FIS_SONARCLOUD_TOKEN`; para un SonarQube propio del curso, `FIS_SONAR_URL`
    y `FIS_SONAR_TOKEN` (usuario con permiso *Browse* sobre los proyectos). Van en `deploy/.env`.
 
@@ -62,7 +62,10 @@ sh deploy/instalar.sh
 El instalador:
 
 1. Genera `deploy/.env` con contraseñas aleatorias para PostgreSQL, MongoDB, Metabase y el portal.
-2. Construye y levanta los contenedores (`sitio` (nginx), `portal`, `revisor` (trabajador), `postgres`, `mongo`, `metabase`).
+2. Construye y levanta los contenedores (`sitio` (nginx), `portal`, `revisor` (trabajador), `postgres`, `mongo`, `metabase`,
+   `sonarqube`). SonarQube necesita unos 4 GB de RAM y `vm.max_map_count` ≥ 524288 en el servidor
+   (`sysctl vm.max_map_count`).
+3. Crea la base de SonarQube y lo configura para el análisis interno (`deploy/sonar_setup.py`).
 3. Espera a Metabase, crea el administrador, la conexión a los datos y los dos tableros.
 4. Arranca la primera revisión de la próxima entrega.
 

@@ -446,29 +446,34 @@ def _sonar(ev) -> dict | None:
     candidatas = list(dict.fromkeys([c for c in (clave, f"{org}_{nombre}", nombre) if c]))
     for servidor, url, token in _servidores_sonar():
         for candidata in candidatas:
-            datos = _sonar_get(url, token, "/api/measures/component", {"component": candidata, "metricKeys": METRICAS_SONAR})
-            if not datos or "component" not in datos:
-                continue
-            info.update(clave=candidata, servidor=servidor, url=url,
-                        medidas={m["metric"]: m.get("value") for m in datos["component"].get("measures", [])})
-            qg = _sonar_get(url, token, "/api/qualitygates/project_status", {"projectKey": candidata}) or {}
-            estado = qg.get("projectStatus") or {}
-            info["quality_gate"] = estado.get("status")
-            info["condiciones_fallidas"] = [
-                f"{c.get('metricKey')} {c.get('comparator', '')} {c.get('errorThreshold', '')} (valor {c.get('actualValue')})"
-                for c in estado.get("conditions", []) if c.get("status") == "ERROR"]
-            an = _sonar_get(url, token, "/api/project_analyses/search", {"project": candidata, "ps": 500}) or {}
-            fechas = sorted(a["date"][:10] for a in an.get("analyses", []) if a.get("date"))
-            hasta = ev["hasta"]
-            previas = [f for f in fechas if f <= hasta]
-            info["analisis"] = {"total": len(fechas), "hasta_corte": len(previas), "primero": fechas[0] if fechas else None,
-                                "ultimo": previas[-1] if previas else None,
-                                "dias_con_analisis": len(set(previas))}
-            iss = _sonar_get(url, token, "/api/issues/search",
-                             {"componentKeys": candidata, "resolved": "false", "ps": 1, "facets": "severities,types"}) or {}
-            info["problemas"] = {f["property"]: {v["val"]: v["count"] for v in f.get("values", [])} for f in iss.get("facets", [])}
-            info["problemas_total"] = iss.get("total")
-            return info
+            datos = leer_proyecto(url, token, candidata, ev["hasta"])
+            if datos:
+                info.update(servidor=servidor, **datos)
+                return info
+    return info
+
+
+def leer_proyecto(url: str, token: str | None, clave: str, hasta: str) -> dict | None:
+    """Medidas, quality gate, análisis hasta el corte y problemas abiertos de un proyecto Sonar."""
+    datos = _sonar_get(url, token, "/api/measures/component", {"component": clave, "metricKeys": METRICAS_SONAR})
+    if not datos or "component" not in datos:
+        return None
+    info = {"clave": clave, "url": url, "medidas": {m["metric"]: m.get("value") for m in datos["component"].get("measures", [])}}
+    qg = _sonar_get(url, token, "/api/qualitygates/project_status", {"projectKey": clave}) or {}
+    estado = qg.get("projectStatus") or {}
+    info["quality_gate"] = estado.get("status")
+    info["condiciones_fallidas"] = [
+        f"{c.get('metricKey')} {c.get('comparator', '')} {c.get('errorThreshold', '')} (valor {c.get('actualValue')})"
+        for c in estado.get("conditions", []) if c.get("status") == "ERROR"]
+    an = _sonar_get(url, token, "/api/project_analyses/search", {"project": clave, "ps": 500}) or {}
+    fechas = sorted(a["date"][:10] for a in an.get("analyses", []) if a.get("date"))
+    previas = [f for f in fechas if f <= hasta]
+    info["analisis"] = {"total": len(fechas), "hasta_corte": len(previas), "primero": fechas[0] if fechas else None,
+                        "ultimo": previas[-1] if previas else None, "dias_con_analisis": len(set(previas))}
+    iss = _sonar_get(url, token, "/api/issues/search",
+                     {"componentKeys": clave, "resolved": "false", "ps": 1, "facets": "severities,types"}) or {}
+    info["problemas"] = {f["property"]: {v["val"]: v["count"] for v in f.get("values", [])} for f in iss.get("facets", [])}
+    info["problemas_total"] = iss.get("total")
     return info
 
 

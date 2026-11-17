@@ -93,6 +93,35 @@ services:
       retries: 3
     networks: [fis]
 
+  sonarqube:
+    # SonarQube del curso: análisis interno del profesor (perfil común). Solo se publica dentro del portal en /sonar/.
+    image: sonarqube:26.10.0.133078-community
+    restart: unless-stopped
+    environment:
+      SONAR_JDBC_URL: jdbc:postgresql://postgres:5432/sonar
+      SONAR_JDBC_USERNAME: sonar
+      SONAR_JDBC_PASSWORD: ${SONAR_DB_PASSWORD:?ejecute deploy/instalar.sh}
+      SONAR_WEB_CONTEXT: /sonar
+      SONAR_TELEMETRY_ENABLE: "false"
+    volumes:
+      - sonardata:/opt/sonarqube/data
+      - sonarext:/opt/sonarqube/extensions
+      - sonarlogs:/opt/sonarqube/logs
+    ulimits:
+      nofile: {soft: 131072, hard: 131072}
+      nproc: 8192
+    depends_on:
+      postgres:
+        condition: service_healthy
+    healthcheck:
+      # La imagen no trae wget ni curl: se consulta el estado con bash puro.
+      test: ["CMD", "bash", "-c", "exec 3<>/dev/tcp/127.0.0.1/9000 && printf 'GET /sonar/api/system/status HTTP/1.0\r\n\r\n' >&3 && grep -q '\"UP\"' <&3"]
+      interval: 15s
+      timeout: 5s
+      retries: 40
+      start_period: 90s
+    networks: [fis]
+
   portal:
     # Aplicación web del profesor: datos en vivo, usuarios, revisiones bajo demanda, rúbricas y tableros.
     build:
@@ -142,6 +171,7 @@ services:
       MB_URL: http://metabase:3000
       MB_ADMIN_EMAIL: ${MB_ADMIN_EMAIL:-admin@fis.local}
       MB_ADMIN_PASSWORD: ${MB_ADMIN_PASSWORD}
+      SONAR_ADMIN_PASSWORD: ${SONAR_ADMIN_PASSWORD:-}
       LECTURA_PASSWORD: ${LECTURA_PASSWORD}
     volumes:
       - informes:/datos
@@ -153,6 +183,9 @@ services:
     networks: [fis]
 
 volumes:
+  sonardata:
+  sonarext:
+  sonarlogs:
   pgdata:
   mongodata:
   informes:
