@@ -1,0 +1,50 @@
+# Configuración del curso. Es lo único que hay que tocar cada período.
+org: puj-course
+curso: Fundamentos de Ingeniería de Software
+periodo: "2630"
+
+# Los repos de equipo se descubren por prefijo: FIS_<periodo>_<clase>_G<n>
+repo_prefijo: "FIS_2630_"
+repos_excluir: []          # p. ej. ["FIS_2630_Parcial_1204"]
+
+# Fechas de corte (YYYY-MM-DD), tomadas de la programación académica de la
+# universidad. La revisión de cada entrega mira la evidencia hasta el final de ese
+# día (hora de Bogotá); antes de la fecha, mira el estado de hoy.
+# Fechas confirmadas por el profesor para el período 2630.
+entregas:
+  entrega1: {rubrica: rubrics/entrega1.yaml, fecha: "2026-09-04"}
+  entrega2: {rubrica: rubrics/entrega2.yaml, fecha: "2026-10-16"}
+  entrega3: {rubrica: rubrics/entrega3.yaml, fecha: "2026-11-17"}
+
+# Cuentas que no son estudiantes (no entran al conteo de aporte individual).
+ignorar_usuarios:
+  - github-actions[bot]
+  - dependabot[bot]
+  - web-flow
+  # Monitores del curso. Además, con `detectar_monitores: true` se excluye
+  # automáticamente toda cuenta que aparezca en TODOS los repos del período.
+  - JuanParias29
+  - x19marlon
+
+detectar_monitores: true
+
+# Estructura que pide la plantilla Repository_Template_FIS.
+estructura_esperada:
+  carpetas: [src, conf, docs, scripts]
+  archivos: [README.md, LICENSE, .gitignore]
+readme_secciones:          # se buscan como títulos, sin tildes ni mayúsculas
+  - descripcion
+  - equipo
+  - tecnologias
+  - estructura
+  - instalacion
+
+# Umbrales de las señales de proceso (insumo para la sustentación oral).
+senales:
+  commit_grande_lineas: 800       # adiciones en un solo commit
+  horas_antes_de_entrega: 48      # ventana de "trabajo de última hora"
+  max_fraccion_ultima_hora: 0.4   # fracción de commits en esa ventana
+
+# Etiqueta de la bitácora que el agente crea en cada repo de equipo.
+# Las issues con esta etiqueta se excluyen de todas las métricas.
+etiqueta_bitacora: fis-reviewer

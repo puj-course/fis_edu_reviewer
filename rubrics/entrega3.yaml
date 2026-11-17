@@ -1,0 +1,74 @@
+# Rúbrica Entrega final (12% del curso). Fuente: Rubricas_Entregas_Proyecto_3_202630.xlsx.
+entrega: entrega3
+nombre: Entrega final
+criterios:
+  - id: metricas_calidad
+    nombre: Implementación Métricas de Calidad
+    peso: 0.15
+    tipo: asistido
+    checks: [sonar, metricas_docs]
+    conceptos: [Calidad de software, Métricas, SonarQube]
+    niveles:
+      - {nombre: Excelente, rango: [4.6, 5.0], descripcion: "Al menos 3 métricas de calidad implementadas directamente en el código (librerías o métodos propios), explícitamente distintas de las de SonarQube (p. ej. complejidad ciclomática, latencia, throughput, validaciones de negocio), y al menos 2 métricas mediante SonarQube. La interpretación de cada métrica es clara y fundamentada: qué mide y cómo se interpreta el resultado. Se justifica el impacto en la calidad del sistema y se proponen acciones concretas de mejora para las métricas deficientes."}
+      - {nombre: Bueno, rango: [4.0, 4.5], descripcion: "Al menos 2 métricas en el código distintas de SonarQube y al menos 2 mediante SonarQube. La explicación es clara pero el análisis es menos profundo o parcial. Las acciones de mejora tienen menor detalle o justificación técnica."}
+      - {nombre: Regular, rango: [2.6, 3.9], descripcion: "Al menos 1 métrica en código y 1 en SonarQube, con diferenciación limitada o poco clara. Interpretación superficial o incompleta, impacto débilmente justificado y acciones de mejora genéricas."}
+      - {nombre: Deficiente, rango: [1.0, 2.5], descripcion: "0 o 1 métricas en total, o no se diferencian métricas propias de las de SonarQube, no hay uso adecuado de SonarQube, la interpretación es incorrecta o inexistente, o no se proponen acciones de mejora."}
+
+  - id: despliegue
+    nombre: Despliegue y configuración
+    peso: 0.15
+    tipo: auto
+    checks: [docker, pipeline_docker]
+    conceptos: [DevOps, Contenedores, CI/CD]
+    niveles:
+      - {nombre: Excelente, rango: [4.0, 5.0], descripcion: "Flujo completo de CI/CD que construye, versiona y despliega de manera automatizada. Dockerfile y Docker Compose correctamente definidos. El pipeline construye la imagen, valida build y pruebas, publica la imagen en Docker Hub con versionamiento claro y despliega con Docker Compose. Se evidencia la ejecución del despliegue, incluyendo la red Docker. Todo documentado y reproducible."}
+      - {nombre: Bueno, rango: [3.0, 3.9], descripcion: "Dockerfile y Docker Compose funcionales y un pipeline en GitHub Actions que automatiza parcialmente integración y despliegue. La evidencia del despliegue es parcial o la red entre servicios no es clara. Documentación básica."}
+      - {nombre: Regular, rango: [1.0, 2.9], descripcion: "Configuración de Docker incompleta o con errores. El pipeline es inexistente o está mal configurado. Sin evidencia clara de despliegue ni de redes entre servicios. Documentación insuficiente."}
+
+  - id: pruebas_unitarias
+    nombre: Pruebas Unitarias
+    peso: 0.20
+    tipo: auto
+    checks: [cobertura, pipeline_pruebas]
+    conceptos: [Pruebas de software, Cobertura, Integración continua]
+    niveles:
+      - {nombre: Excelente, rango: [4.6, 5.0], descripcion: "Cobertura superior al 80% evidenciada en SonarQube. Las pruebas cubren los componentes críticos. Se ejecutan automáticamente en push y/o pull request, con resultados exitosos y reportes de coverage consistentes con SonarQube."}
+      - {nombre: Bueno, rango: [4.0, 4.5], descripcion: "Cobertura entre 60% y 79% en SonarQube. Pipeline que ejecuta las pruebas, con evidencia parcial o reportes limitados."}
+      - {nombre: Regular, rango: [2.6, 3.9], descripcion: "Cobertura entre 40% y 59% en SonarQube, o pruebas con fallos frecuentes. Pipeline parcialmente configurado o con errores."}
+      - {nombre: Deficiente, rango: [1.0, 2.5], descripcion: "Cobertura inferior al 40% o sin pruebas unitarias. Sin ejecución automatizada ni reportes verificables."}
+
+  - id: integracion_sms
+    nombre: Integración servicio SMS
+    peso: 0.10
+    tipo: humano
+    checks: [sms]
+    conceptos: [Integración con servicios externos]
+    niveles:
+      - {nombre: Excelente, rango: [4.6, 5.0], descripcion: "Integración correcta con un proveedor de SMS (Twilio, Telegram, etc.), funcional y comprobable mediante demostraciones (logs, mensajes recibidos, registros de envío)."}
+      - {nombre: Bueno, rango: [4.0, 4.5], descripcion: "Integración implementada con limitaciones parciales (solo simulaciones o entornos de prueba). Evidencia parcial."}
+      - {nombre: Regular, rango: [2.6, 3.9], descripcion: "Intentos de integración (código o configuración incompleta), sin comunicación real con el proveedor."}
+      - {nombre: Deficiente, rango: [1.0, 2.5], descripcion: "No se implementa la integración con un proveedor de SMS."}
+
+  - id: agiles_postmortem
+    nombre: Metodologías ágiles y postmortem
+    peso: 0.25
+    tipo: asistido
+    checks: [hitos, historias_por_sprint, commits_por_sprint, equilibrio, versiones, postmortem]
+    conceptos: [Métricas ágiles, Velocidad, Releases, Postmortem]
+    niveles:
+      - {nombre: Excelente, rango: [4.6, 5.0], descripcion: "Aplicación rigurosa de una metodología ágil con reporte cuantitativo: milestones finalizados según lo planificado; todas las HU terminadas y trazables; número y promedio de HU cerradas por sprint; número y promedio de commits por sprint con distribución equilibrada; evidencia de participación (commits, PRs, revisiones); control de versiones organizado (ramas, releases). El postmortem tiene análisis profundo, causas raíz y acciones concretas de mejora."}
+      - {nombre: Bueno, rango: [4.0, 4.5], descripcion: "Aplicación consistente con vacíos menores: la mayoría de milestones y HU terminados y trazables, distribución mayormente equilibrada, trazabilidad por versión parcial. El postmortem identifica causas y acciones con menor profundidad."}
+      - {nombre: Regular, rango: [2.6, 3.9], descripcion: "Aplicación parcial o inconsistente: milestones incompletos, varias HU sin terminar, issues cerradas sin relación con commits, participación desigual. Postmortem descriptivo."}
+      - {nombre: Deficiente, rango: [1.0, 2.5], descripcion: "No se evidencia aplicación adecuada de metodología ágil; reporte inexistente o muy incompleto. Postmortem superficial o inexistente."}
+
+  - id: devops
+    nombre: DevOps
+    peso: 0.15
+    tipo: auto
+    checks: [pipelines]
+    conceptos: [DevOps, Automatización]
+    niveles:
+      - {nombre: Excelente, rango: [4.6, 5.0], descripcion: "Al menos 4 pipelines funcionales y exitosos: CI (1), CD (2) y automatización del proyecto kanban (3 y 4). Todos correctamente justificados."}
+      - {nombre: Bueno, rango: [4.0, 4.5], descripcion: "Al menos 3 pipelines funcionales correctamente justificados y sin fallos."}
+      - {nombre: Regular, rango: [2.6, 3.9], descripcion: "Al menos 2 pipelines funcionales correctamente justificados y sin fallos."}
+      - {nombre: Deficiente, rango: [1.0, 2.5], descripcion: "Al menos 1 pipeline funcional correctamente justificado y sin fallos."}

@@ -1,0 +1,60 @@
+# Rúbrica Entrega 2 (10% del curso). Fuente: Rubricas_Entregas_Proyecto2_V2_Final.xlsx, hoja Proyecto2.
+entrega: entrega2
+nombre: Segunda entrega
+criterios:
+  - id: metodologias_agiles
+    nombre: Metodologías Ágiles
+    peso: 0.20
+    tipo: auto
+    checks: [historias_estructura, sub_issues, trazabilidad, hitos]
+    conceptos: [Backlog, Sprint backlog, Trazabilidad]
+    niveles:
+      - {nombre: Excelente, rango: [4.0, 5.0], descripcion: "Se evidencia aplicación completa de metodología ágil. Las historias de usuario correctamente definidas, sub-issues técnicas asociadas, commits vinculados a cada tarea y evidencia de planificación, ejecución y cierre coherente. Consistencia entre backlog, sprint backlog y entregables."}
+      - {nombre: Deficiente, rango: [1.0, 3.9], descripcion: "Se evidencian inconsistencias en la aplicación de metodología ágil. Falta de trazabilidad en historias de usuario, sub-issues y commits vinculados a cada tarea y pobre evidencia de planificación, ejecución y cierre de las mismas."}
+
+  # OJO: en el Excel esta fila no tiene nombre de criterio ni peso (los demás ya
+  # suman 100%). Se deja con peso 0: se reporta, pero no entra a la nota hasta
+  # que el profesor defina el peso.
+  - id: devops
+    nombre: DevOps (pipelines)
+    peso: 0.0
+    tipo: auto
+    checks: [pipelines]
+    conceptos: [DevOps, Integración continua, Entrega continua]
+    niveles:
+      - {nombre: Excelente, rango: [4.6, 5.0], descripcion: "Configuración de al menos 4 pipelines funcionales y exitosos: CI (1), CD (2) y automatización del proyecto kanban (gestión, validación o integración) (3 y 4). Todos los pipelines están correctamente justificados."}
+      - {nombre: Bueno, rango: [4.0, 4.5], descripcion: "Existen al menos 3 pipelines funcionales correctamente justificados y se ejecutan sin fallos."}
+      - {nombre: Regular, rango: [2.6, 3.9], descripcion: "Existen al menos 2 pipelines funcionales correctamente justificados y se ejecutan sin fallos."}
+      - {nombre: Deficiente, rango: [1.0, 2.5], descripcion: "Existe al menos 1 pipeline funcional correctamente justificado y se ejecuta sin fallos."}
+
+  - id: diseno_arquitectura
+    nombre: Diseño y Arquitectura
+    peso: 0.30
+    tipo: asistido
+    checks: [diagramas]
+    conceptos: [Diseño de software, UML, Arquitectura]
+    niveles:
+      - {nombre: Excelente, rango: [4.6, 5.0], descripcion: "El proyecto posee todos los diagramas solicitados: diagrama de Base de Datos, Clases, Componentes y Despliegue. Son acordes a la lógica de negocio y a la arquitectura que se decidió usar. La justificación en cada uno es adecuada."}
+      - {nombre: Bueno, rango: [4.0, 4.5], descripcion: "El proyecto tiene 3 de los diagramas solicitados y son acordes a la lógica de negocio y a la arquitectura. La justificación en cada uno es adecuada."}
+      - {nombre: Regular, rango: [2.6, 3.9], descripcion: "El proyecto tiene 2 de los diagramas solicitados y son acordes a la lógica de negocio y a la arquitectura. La justificación es poco clara."}
+      - {nombre: Deficiente, rango: [1.0, 2.5], descripcion: "El proyecto tiene 1 de los diagramas solicitados, son poco coherentes con la lógica de negocio y la arquitectura. La justificación es poco clara."}
+
+  - id: prototipo_funcional
+    nombre: Prototipo Funcional
+    peso: 0.25
+    tipo: humano
+    checks: [codigo_fuente, trazabilidad]
+    conceptos: [Incremento de producto, Capas back - BD - front]
+    niveles:
+      - {nombre: Excelente, rango: [4.0, 5.0], descripcion: "Se implementan al menos 3 historias de usuario de mayor complejidad en su totalidad (back, BD, front) y existe trazabilidad técnica mediante commits."}
+      - {nombre: Bueno, rango: [1.0, 3.0], descripcion: "Se implementan al menos 2 historias de usuario de mayor complejidad en su totalidad (back, BD, front) y existe trazabilidad técnica mediante commits."}
+
+  - id: patrones
+    nombre: Patrones
+    peso: 0.25
+    tipo: asistido
+    checks: [patrones_gof]
+    conceptos: [Patrones GoF creacionales, estructurales y de comportamiento]
+    niveles:
+      - {nombre: Excelente, rango: [4.0, 5.0], descripcion: "El proyecto incluye al menos 2 patrones GoF correctamente de cada tipo y están representados en el diagrama del modelo de dominio y en el código fuente."}
+      - {nombre: Bueno, rango: [1.0, 3.0], descripcion: "El proyecto incluye al menos 1 patrón GoF correctamente de cada tipo y están representados en el diagrama del modelo de dominio y en el código fuente."}

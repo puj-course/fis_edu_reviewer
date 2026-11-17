@@ -1,0 +1,150 @@
+# Stack del agente revisor FIS. Se levanta con:   sh deploy/instalar.sh
+#
+#   revisor   revisa los repos del período cada INTERVALO_HORAS (solo lectura sobre GitHub)
+#   postgres  datos relacionales de las revisiones (esquema fis) + base interna de Metabase
+#   mongo     evidencia cruda y resultado completo de cada revisión
+#   metabase  tableros (http://<servidor>:${METABASE_PORT:-3000})
+#   sitio     sitio web del profesor (http://<servidor>:${SITIO_PORT:-8090}); publicarlo con un proxy reverso HTTPS
+#   acceso    página de ingreso y sesiones del sitio (sin puerto propio: solo lo consulta nginx)
+name: fis
+
+services:
+  postgres:
+    image: postgres:16-alpine
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: fis
+      POSTGRES_PASSWORD: ${PG_PASSWORD:?ejecute deploy/instalar.sh}
+      POSTGRES_DB: fis
+      MB_DB_PASSWORD: ${MB_DB_PASSWORD}
+      LECTURA_PASSWORD: ${LECTURA_PASSWORD}
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+      - ./postgres-init.sh:/docker-entrypoint-initdb.d/10-init.sh:ro
+    ports:
+      - "127.0.0.1:${PG_PORT:-54329}:5432" # solo local, para consultas por túnel SSH
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U fis -d fis"]
+      interval: 5s
+      timeout: 3s
+      retries: 20
+    networks: [fis]
+
+  mongo:
+    image: mongo:7
+    restart: unless-stopped
+    environment:
+      MONGO_INITDB_ROOT_USERNAME: fis
+      MONGO_INITDB_ROOT_PASSWORD: ${MONGO_PASSWORD}
+    volumes:
+      - mongodata:/data/db
+    ports:
+      - "127.0.0.1:${MONGO_PORT:-27029}:27017"
+    healthcheck:
+      test: ["CMD", "mongosh", "--quiet", "--eval", "db.adminCommand('ping').ok"]
+      interval: 10s
+      timeout: 5s
+      retries: 12
+    networks: [fis]
+
+  metabase:
+    image: metabase/metabase:v0.64.6
+    restart: unless-stopped
+    environment:
+      MB_DB_TYPE: postgres
+      MB_DB_HOST: postgres
+      MB_DB_PORT: 5432
+      MB_DB_DBNAME: metabase
+      MB_DB_USER: metabase
+      MB_DB_PASS: ${MB_DB_PASSWORD}
+      MB_SITE_LOCALE: es
+      MB_ANON_TRACKING_ENABLED: "false"
+      JAVA_TIMEZONE: America/Bogota
+    ports:
+      - "${METABASE_BIND:-127.0.0.1}:${METABASE_PORT:-3000}:3000"
+    depends_on:
+      postgres:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD-SHELL", "curl -fs http://localhost:3000/api/health | grep -q ok"]
+      interval: 10s
+      timeout: 5s
+      retries: 40
+      start_period: 60s
+    networks: [fis]
+
+  sitio:
+    image: nginx:1.27-alpine
+    restart: unless-stopped
+    volumes:
+      - informes:/datos:ro
+      - ./nginx.conf:/etc/nginx/conf.d/default.conf:ro
+    ports:
+      - "${SITIO_BIND:-0.0.0.0}:${SITIO_PORT:-8090}:80"
+    depends_on:
+      acceso:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD-SHELL", "wget -qO- http://127.0.0.1/salud | grep -q ok"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+    networks: [fis]
+
+  acceso:
+    build:
+      context: ..
+      dockerfile: deploy/Dockerfile
+    restart: unless-stopped
+    command: ["python", "-m", "reviewer", "acceso", "--puerto", "8000"]
+    environment:
+      SITIO_USUARIO: ${SITIO_USUARIO:-profesor}
+      SITIO_PASSWORD: ${SITIO_PASSWORD:?ejecute deploy/instalar.sh}
+      SITIO_SECRETO: ${SITIO_SECRETO:?ejecute deploy/instalar.sh}
+      SITIO_SESION_HORAS: ${SITIO_SESION_HORAS:-12}
+      SITIO_HTTPS: ${SITIO_HTTPS:-0}
+    volumes:
+      - informes:/datos:ro
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request as u; u.urlopen('http://127.0.0.1:8000/')"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+    networks: [fis]
+
+  revisor:
+    build:
+      context: ..
+      dockerfile: deploy/Dockerfile
+    restart: unless-stopped
+    environment:
+      FIS_GH_TOKEN: ${FIS_GH_TOKEN:?falta FIS_GH_TOKEN en deploy/.env}
+      DEEPSEEK_API_KEY: ${DEEPSEEK_API_KEY:-}
+      DEEPSEEK_BASE_URL: ${DEEPSEEK_BASE_URL:-}
+      DEEPSEEK_MODEL: ${DEEPSEEK_MODEL:-}
+      FIS_PG_DSN: postgresql://fis:${PG_PASSWORD}@postgres:5432/fis
+      FIS_MONGO_URI: mongodb://fis:${MONGO_PASSWORD}@mongo:27017/?authSource=admin
+      ENTREGA: ${ENTREGA:-auto}
+      INTERVALO_HORAS: ${INTERVALO_HORAS:-24}
+      # Datos para deploy/metabase_setup.py
+      MB_URL: http://metabase:3000
+      MB_ADMIN_EMAIL: ${MB_ADMIN_EMAIL:-admin@fis.local}
+      MB_ADMIN_PASSWORD: ${MB_ADMIN_PASSWORD}
+      LECTURA_PASSWORD: ${LECTURA_PASSWORD}
+      SITIO_USUARIO: ${SITIO_USUARIO:-profesor}
+    volumes:
+      - informes:/datos
+    depends_on:
+      postgres:
+        condition: service_healthy
+      mongo:
+        condition: service_healthy
+    networks: [fis]
+
+volumes:
+  pgdata:
+  mongodata:
+  informes:
+
+networks:
+  fis:

@@ -1,0 +1,46 @@
+name: Historia de usuario
+description: Una necesidad del usuario que el equipo se compromete a entregar en un sprint
+title: "HU: "
+labels: ["historia de usuario"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Escríbanla ustedes, con sus palabras. Antes de crearla, pásenla por INVEST:
+        ¿es Independiente, Negociable, Valiosa, Estimable, Pequeña (Small) y Testeable?
+  - type: textarea
+    id: historia
+    attributes:
+      label: Historia
+      value: |
+        **Como** <rol>
+        **quiero** <funcionalidad>
+        **para** <beneficio>
+    validations:
+      required: true
+  - type: textarea
+    id: criterios
+    attributes:
+      label: Criterios de aceptación
+      description: Condiciones verificables. Formato sugerido Dado / Cuando / Entonces.
+      value: |
+        1. **Dado** … **cuando** … **entonces** …
+    validations:
+      required: true
+  - type: textarea
+    id: dod
+    attributes:
+      label: Definition of Done
+      value: |
+        - [ ] Código integrado a `develop` mediante pull request revisado
+        - [ ] Pruebas unitarias que cubren los criterios de aceptación
+        - [ ] Pipeline de CI en verde
+        - [ ] Documentación actualizada
+        - [ ] Verificada por el QA Lead
+    validations:
+      required: true
+  - type: markdown
+    attributes:
+      value: |
+        Al crearla: asignen responsable, **milestone** (sprint), y en el tablero la **estimación** y la **prioridad**.
+        Las tareas técnicas van como **sub-issues** de esta historia.

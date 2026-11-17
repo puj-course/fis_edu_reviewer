@@ -1,0 +1,72 @@
+# Rúbrica Entrega 1 (8% del curso). Fuente: Rubricas_Entregas_Proyecto2_V2_Final.xlsx, hoja Proyecto1.
+# tipo: auto     -> el nivel sale de indicadores medibles en GitHub
+#       asistido -> hay indicadores, pero el nivel lo propone la IA y lo decide el profesor
+#       humano   -> solo se muestra evidencia; decide el profesor
+entrega: entrega1
+nombre: Primera entrega
+criterios:
+  - id: organizacion_repositorio
+    nombre: Organización del Repositorio
+    peso: 0.05
+    tipo: auto
+    checks: [estructura, readme, wiki, gitflow, conventional_commits]
+    conceptos: [Gestión de configuración, GitFlow, Conventional Commits]
+    niveles:
+      - {nombre: Excelente, rango: [4.0, 5.0], descripcion: "El repositorio sigue la estructura de carpetas definida, así como el README y Wiki siguen las plantillas establecidas. Se evidencia el uso adecuado del GitFlow entre ramas y el flujo del desarrollo por medio de conventional commits, PR, Merge, etc."}
+      - {nombre: Deficiente, rango: [1.0, 3.5], descripcion: "La estructura del repositorio es básica o incompleta. El README o Wiki NO siguen completamente las plantillas. El GitFlow es poco claro y los commits son básicos y poco descriptivos."}
+
+  - id: organizacion_proyecto
+    nombre: Organización del Proyecto
+    peso: 0.10
+    tipo: auto
+    checks: [issues_completas, kanban]
+    conceptos: [Kanban, Sprint, Milestone, Estimación]
+    niveles:
+      - {nombre: Excelente, rango: [4.6, 5.0], descripcion: "Entre el 80% - 100% de las issues siguen coherentemente el flujo Kanban del proyecto. Todas las tareas están asociadas a un Sprint y un Milestone. Además las issues contienen todas las características vistas en clase (estimación, asignación, labels, prioridad, etc.)."}
+      - {nombre: Bueno, rango: [4.0, 4.5], descripcion: "Entre el 60% - 80% de las issues siguen coherentemente el flujo Kanban y tienen sus características."}
+      - {nombre: Regular, rango: [2.6, 3.9], descripcion: "Entre el 50% - 60% de las issues siguen coherentemente el flujo Kanban y tienen sus características."}
+      - {nombre: Deficiente, rango: [1.0, 2.5], descripcion: "Menos del 50% de las issues siguen coherentemente el flujo Kanban y tienen sus características."}
+
+  - id: historias_usuario
+    nombre: Definición de Historias de Usuario
+    peso: 0.25
+    tipo: asistido
+    checks: [historias_estructura]
+    conceptos: [Ingeniería de requisitos, INVEST, Criterios de aceptación, Definition of Done]
+    niveles:
+      - {nombre: Excelente, rango: [4.6, 5.0], descripcion: "Entre el 80% - 100% de las historias siguen la estructura definida en clase (INVEST, DoD, Criterios de aceptación, etc.)."}
+      - {nombre: Bueno, rango: [4.0, 4.5], descripcion: "Entre el 60% - 80% de las historias siguen la estructura definida en clase."}
+      - {nombre: Regular, rango: [2.6, 3.9], descripcion: "Entre el 50% - 60% de las historias siguen la estructura definida en clase."}
+      - {nombre: Deficiente, rango: [1.0, 2.5], descripcion: "Menos del 50% de las historias siguen la estructura definida en clase."}
+
+  - id: flujo_agil
+    nombre: Gestión del Flujo de Trabajo Ágil
+    peso: 0.25
+    tipo: asistido
+    checks: [ceremonias, hitos]
+    conceptos: [Scrum, Sprint Planning, Daily, Retrospectiva, Roles]
+    niveles:
+      - {nombre: Excelente, rango: [4.0, 5.0], descripcion: "Se evidencia el seguimiento de la metodología ágil de manera rigurosa a través de: Sprint Planning, dailies, retrospectiva, etc. El Product Owner realiza planificación o replanificación cuando corresponde y el QA Lead verifica el cumplimiento de los criterios de Done antes de dar por cerrada una tarea."}
+      - {nombre: Deficiente, rango: [0.0, 3.5], descripcion: "No se evidencia de manera clara el seguimiento de la metodología ágil o hay inconsistencia en Sprint Planning, dailies, retrospectiva, etc. El rol del Product Owner y/o del QA Lead son superficiales."}
+
+  - id: aporte_trazabilidad
+    nombre: Aporte Individual y Trazabilidad Técnica
+    peso: 0.25
+    tipo: auto
+    checks: [trazabilidad, aporte_historias]
+    conceptos: [Trazabilidad, issue - commit - cierre]
+    niveles:
+      - {nombre: Excelente, rango: [4.0, 5.0], descripcion: "Cada miembro evidencia trabajo en al menos 2 historias con avance real y coherente. Así mismo, existe trazabilidad entre issue - commits - cierre."}
+      - {nombre: Bueno, rango: [3.0, 3.9], descripcion: "Participación visible pero con trazabilidad parcial entre issue - commits - cierre. Poca relación entre historias de usuario y avance real."}
+      - {nombre: Deficiente, rango: [1.0, 2.9], descripcion: "NO se evidencia aporte individual claro y/o NO hay relación entre commits e historias."}
+
+  - id: avance_funcional
+    nombre: Avance Funcional Mínimo
+    peso: 0.10
+    tipo: humano
+    checks: [codigo_fuente]
+    conceptos: [Incremento de producto, Persistencia]
+    niveles:
+      - {nombre: Excelente, rango: [4.0, 5.0], descripcion: "Existen al menos 2 historias funcionales con implementación parcial real (>=50%). Métodos funcionando y conectados a BD. Evidencia técnica verificable en commits e issues."}
+      - {nombre: Regular, rango: [3.0, 3.9], descripcion: "Las historias están parcialmente implementadas pero la conexión a BD o funcionalidad NO es completamente verificable."}
+      - {nombre: Deficiente, rango: [1.0, 2.9], descripcion: "Implementación mínima o simulada sin conexión real a BD."}

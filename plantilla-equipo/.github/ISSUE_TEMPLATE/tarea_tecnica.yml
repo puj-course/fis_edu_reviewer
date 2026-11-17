@@ -1,0 +1,24 @@
+name: Tarea técnica
+description: Trabajo concreto necesario para completar una historia de usuario (créenla como sub-issue)
+title: "Tarea: "
+labels: ["tarea"]
+body:
+  - type: input
+    id: historia
+    attributes:
+      label: Historia a la que pertenece
+      placeholder: "#12"
+    validations:
+      required: true
+  - type: textarea
+    id: descripcion
+    attributes:
+      label: Qué hay que hacer
+    validations:
+      required: true
+  - type: textarea
+    id: hecho
+    attributes:
+      label: Cómo sabremos que está terminada
+    validations:
+      required: true

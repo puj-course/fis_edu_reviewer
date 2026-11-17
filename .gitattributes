@@ -1,0 +1,4 @@
+# Finales de línea de Linux en todo el repo: los scripts y contenedores corren en Linux/WSL.
+* text=auto eol=lf
+*.png binary
+*.jpg binary

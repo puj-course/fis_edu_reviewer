@@ -1,0 +1,88 @@
+name: Revisión formativa FIS
+
+# Recorre los repos de equipo del período y los revisa contra la rúbrica.
+# Secretos:   FIS_GH_TOKEN (obligatorio), DEEPSEEK_API_KEY (opcional, activa la IA)
+# Variables:  FIS_PUBLICAR=true  -> la corrida programada comenta en los repos de los equipos
+#             FIS_DATA_REPO=org/repo-privado -> donde se guardan los informes del profesor
+#             DEEPSEEK_MODEL, DEEPSEEK_BASE_URL (opcionales)
+on:
+  schedule:
+    - cron: "0 11 * * 1" # lunes 6:00 a. m. (Bogotá)
+  workflow_dispatch:
+    inputs:
+      entrega:
+        description: Rúbrica a aplicar
+        type: choice
+        options: [auto, entrega1, entrega2, entrega3]
+        default: auto
+      repo:
+        description: Un solo repo (org/nombre). Vacío = todos los del período
+        required: false
+      ia:
+        description: Usar DeepSeek para los criterios cualitativos
+        type: boolean
+        default: true
+      publicar:
+        description: Comentar el informe formativo en los repos de los equipos
+        type: boolean
+        default: false
+
+permissions:
+  contents: read
+
+concurrency:
+  group: revision-fis
+  cancel-in-progress: false
+
+jobs:
+  revisar:
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    env:
+      FIS_GH_TOKEN: ${{ secrets.FIS_GH_TOKEN }}
+      DEEPSEEK_API_KEY: ${{ secrets.DEEPSEEK_API_KEY }}
+      DEEPSEEK_MODEL: ${{ vars.DEEPSEEK_MODEL }}
+      DEEPSEEK_BASE_URL: ${{ vars.DEEPSEEK_BASE_URL }}
+      ENTREGA: ${{ inputs.entrega || 'auto' }}
+      REPO: ${{ inputs.repo }}
+      # En la corrida programada no hay inputs: IA si hay clave, publicar según la variable.
+      USAR_IA: ${{ github.event_name == 'schedule' || inputs.ia }}
+      PUBLICAR: ${{ github.event_name == 'schedule' && vars.FIS_PUBLICAR == 'true' || inputs.publicar }}
+      DATA_REPO: ${{ vars.FIS_DATA_REPO }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+      - run: pip install -r requirements.txt
+
+      - name: Revisar repositorios
+        run: |
+          set -euo pipefail
+          opciones=(--entrega "$ENTREGA" --salida salida)
+          [ "$USAR_IA" = "true" ] && [ -n "$DEEPSEEK_API_KEY" ] && opciones+=(--ia)
+          [ "$PUBLICAR" = "true" ] && opciones+=(--publicar)
+          if [ -n "$REPO" ]; then
+            python -m reviewer revisar --repo "$REPO" "${opciones[@]}"
+          else
+            python -m reviewer revisar-todos "${opciones[@]}"
+          fi
+
+      # Los informes del profesor NO se suben como artefacto: este repo es público.
+      - name: Guardar informes privados
+        if: ${{ always() && vars.FIS_DATA_REPO != '' }}
+        run: |
+          set -euo pipefail
+          [ -d salida ] || exit 0
+          git clone --depth 1 "https://x-access-token:${FIS_GH_TOKEN}@github.com/${DATA_REPO}.git" datos
+          destino="datos/$(date -u +%Y-%m-%d)"
+          mkdir -p "$destino"
+          cp -r salida/. "$destino/"
+          find "$destino" -name evidencia.json -delete
+          cd datos
+          git config user.name "fis-edu-reviewer"
+          git config user.email "fis-edu-reviewer@users.noreply.github.com"
+          git add -A
+          git diff --cached --quiet || git commit -q -m "chore: revisión $(date -u +%Y-%m-%d) (${ENTREGA})"
+          git push -q
