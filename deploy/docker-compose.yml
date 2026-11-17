@@ -122,6 +122,11 @@ services:
       DEEPSEEK_API_KEY: ${DEEPSEEK_API_KEY:-}
       DEEPSEEK_BASE_URL: ${DEEPSEEK_BASE_URL:-}
       DEEPSEEK_MODEL: ${DEEPSEEK_MODEL:-}
+      # Sonar: SonarCloud público no necesita nada. Token para proyectos privados de SonarCloud,
+      # y URL + token si el curso tiene su propio SonarQube.
+      FIS_SONARCLOUD_TOKEN: ${FIS_SONARCLOUD_TOKEN:-}
+      FIS_SONAR_URL: ${FIS_SONAR_URL:-}
+      FIS_SONAR_TOKEN: ${FIS_SONAR_TOKEN:-}
       FIS_PG_DSN: postgresql://fis:${PG_PASSWORD}@postgres:5432/fis
       FIS_MONGO_URI: mongodb://fis:${MONGO_PASSWORD}@mongo:27017/?authSource=admin
       ENTREGA: ${ENTREGA:-auto}

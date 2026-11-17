@@ -90,6 +90,10 @@ font-weight:800;font-size:12px;width:22px;height:22px;border-radius:50%;display:
 .peso .b span{display:block;height:100%;background:var(--jav-azul)}
 .t-auto{background:color-mix(in srgb,var(--s3) 18%,transparent);color:var(--fg)}.t-asistido{background:color-mix(in srgb,var(--s5) 22%,transparent);color:var(--fg)}
 .t-humano{background:var(--grid);color:var(--fg)}
+.letra{display:inline-grid;place-items:center;width:22px;height:22px;border-radius:6px;font-weight:800;font-size:12px;color:#fff;margin-right:2px}
+.lA{background:#1f9d55}.lB{background:#7cb342}.lC{background:#e0a100}.lD{background:#ef6c00}.lE{background:#c62828}.l_{background:var(--mut)}
+.mini{display:inline-block;width:70px;height:7px;border-radius:4px;background:var(--grid);overflow:hidden;vertical-align:middle;margin-right:6px}
+.mini span{display:block;height:100%}
 details summary{cursor:pointer;color:var(--acc);font-weight:600}
 footer{color:var(--mut);font-size:12px;text-align:center;padding:24px 16px;border-top:1px solid var(--bd)}
 @media (max-width:600px){.hero h1{font-size:23px}.marca .c{font-size:16px}.kpi .v{font-size:24px}}
@@ -282,6 +286,44 @@ def _mapa_calor(equipos: list[str], criterios: list[str], celdas: dict, enlace=l
     return f'<div class="tw"><table class="mapa"><thead><tr>{th}</tr></thead><tbody>{tr}</tbody></table></div>'
 
 
+def _letra(v) -> str:
+    return f'<span class="letra l{E(v) if v in ("A", "B", "C", "D", "E") else "_"}" title="{E(str(v or "sin dato"))}">{E(v or "?")}</span>'
+
+
+def _mini(v, maximo=100.0, umbral=80.0) -> str:
+    if v is None:
+        return '<span class="mut">—</span>'
+    v = float(v)
+    color = "var(--ok)" if v >= umbral else "var(--s2)" if v >= umbral * .75 else "var(--bad)"
+    return f'<span class="mini"><span style="width:{min(v / maximo, 1) * 100:.0f}%;background:{color}"></span></span>{v:.1f}%'
+
+
+def _chip_qg(qg) -> str:
+    return {"OK": '<span class="chip ok">aprobado</span>', "ERROR": '<span class="chip bad">no aprobado</span>'}.get(
+        qg, '<span class="chip neu">sin dato</span>')
+
+
+def _enlace_sonar(s: dict) -> str:
+    if not s.get("url") or not s.get("clave"):
+        return E(s.get("servidor") or "—")
+    return f'<a href="{E(s["url"])}/dashboard?id={E(s["clave"])}">{E(s["servidor"])}</a>'
+
+
+def _fila_sonar(s: dict, enlace_equipo: str = "") -> list:
+    deuda = int(s.get("deuda_min") or 0)
+    nw = lambda x: f'<span style="white-space:nowrap">{x}</span>'
+    fila = [_enlace_sonar(s), _chip_qg(s.get("quality_gate")), nw(_mini(s.get("cobertura"))),
+            nw(_letra(s.get("mantenibilidad")) + _letra(s.get("fiabilidad")) + _letra(s.get("seguridad"))),
+            f'{s.get("bugs") or 0} / {s.get("vulnerabilidades") or 0} / {s.get("code_smells") or 0} / {s.get("hotspots") or 0}',
+            nw(f"{deuda // 60} h {deuda % 60:02d} min"), f'{float(s["duplicacion"]):.1f}%' if s.get("duplicacion") is not None else "—",
+            nw(f'{s.get("analisis") or 0} · último {s["ultimo_analisis"]:%d/%m}') if s.get("ultimo_analisis") else '<span class="mut">sin análisis</span>']
+    return ([enlace_equipo] if enlace_equipo else []) + fila
+
+
+ENC_SONAR = ["Servidor", "Quality gate", "Cobertura", "Mant. · Fiab. · Seg.", "Bugs / Vuln. / Smells / Hotspots",
+             "Deuda técnica", "Duplicación", "Análisis"]
+
+
 def _gh(repo: str, ref: str) -> str:
     ref = ref.strip()
     if ref.startswith("#"):
@@ -397,6 +439,8 @@ def generar(dsn: str, salida: str, cfg: dict | None = None, rubricas: dict | Non
         commits_top = q("""SELECT * FROM (SELECT repo, equipo, login, sha, fecha, mensaje, adiciones,
                                   row_number() OVER (PARTITION BY repo, login ORDER BY fecha DESC) AS n
                            FROM fis.commits WHERE NOT es_merge) t WHERE n <= 12""")
+        hay_sonar = q("SELECT to_regclass('fis.sonar') IS NOT NULL AS hay")[0]["hay"]
+        sonar_eq = {r["equipo"]: r for r in q("SELECT * FROM fis.sonar")} if hay_sonar else {}
         actividad = {r["equipo"]: r for r in q("""
             SELECT equipo, count(*) FILTER (WHERE NOT es_merge) AS commits,
                    round(100.0 * avg(convencional::int) FILTER (WHERE NOT es_merge)) AS conv,
@@ -483,6 +527,9 @@ def generar(dsn: str, salida: str, cfg: dict | None = None, rubricas: dict | Non
 <div class="card"><h3>Evolución de la pre-nota · {nombre_actual}</h3>{_lineas(series)}</div></div>
 <h2>Mapa de criterios · {nombre_actual}</h2><p class="mut">Puntaje sugerido por criterio (0 a 5). «profesor» = criterio que solo califica el profesor.</p>
 {_mapa_calor(list(rev_eq), nombres_cr, celdas, lambda eq: f"equipo/{eq}.html")}
+<h2>Calidad del código (Sonar)</h2><p class="mut">Resultados de los análisis que corre el pipeline de cada equipo.
+Bugs / vulnerabilidades / code smells / security hotspots abiertos. Calificaciones de A (mejor) a E.</p>
+{_tabla(["Equipo"] + ENC_SONAR, [_fila_sonar(sonar_eq[eq], f'<a href="equipo/{E(eq)}.html">{E(eq)}</a>') for eq in rev_eq if eq in sonar_eq])}
 <h2>Equipos</h2><div class="grid">{''.join(tarjetas)}</div>
 <h2>Hallazgos principales (última entrega revisada)</h2>{_tabla(['Equipo', 'Entrega', 'Lo que no se cumple'], hallazgos)}""")
     _escribir(salida, "index.html", _pagina("Panorama", cuerpo, activo="index.html"))
@@ -557,6 +604,7 @@ rastro. Las señales indirectas solo dicen a quién y sobre qué commit pregunta
                   + f"""<div class="g2" style="margin-top:14px"><div class="card"><h3>Reparto de commits</h3>{dona}</div>
 <div class="card"><h3>Commits por semana</h3>{_barras(sorted(por_sem.items()))}</div></div>
 <h2>Integrantes</h2>{_tabla(['Estudiante', 'Commits', 'Semanas', 'Issues cerradas', 'PRs', 'Revisiones', 'Líneas', 'Factor sugerido'], integrantes, {1, 3, 4, 5, 6, 7})}
+<h2>Calidad del código (Sonar)</h2>{_tabla(ENC_SONAR, [_fila_sonar(sonar_eq[eq])]) if eq in sonar_eq else '<p class="mut">El equipo no tiene Sonar configurado o el agente no pudo leer sus resultados.</p>'}
 <div class="g2" style="margin-top:6px"><div><h2>Uso de IA {_chip_ia(d, i)}</h2><ul class="lst">{ia_items or '<li class="mut">Sin señales.</li>'}</ul></div>
 <div><h2>Señales de proceso</h2><ul class="lst">{sn or '<li class="mut">Ninguna.</li>'}</ul></div></div>
 {''.join(secciones)}""")

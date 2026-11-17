@@ -477,7 +477,7 @@ def cobertura(c: Contexto):
     herramienta = bool(re.search(r"jacoco|coverage|lcov|--cov|istanbul|nyc", c.wf_texto + "\n".join(c.ev["archivos"].values()), re.I))
     if valor is None:
         inds = [
-            ind("No se pudo leer la cobertura desde SonarCloud (proyecto privado, SonarQube propio o sin configurar); "
+            ind("No se pudo leer la cobertura desde Sonar (proyecto privado, SonarQube sin acceso o sin configurar); "
                 "verificar en el tablero de Sonar"),
             ind("Hay herramienta de cobertura configurada (JaCoCo, coverage, lcov…)", herramienta),
         ]
@@ -485,7 +485,7 @@ def cobertura(c: Contexto):
     v = float(valor)
     nivel = nivel_por_umbral(v, [(80, "Excelente"), (60, "Bueno"), (40, "Regular")])
     return _res("cobertura", "Cobertura de pruebas",
-                [ind(f"Cobertura en SonarCloud: {v:.1f}%", v >= 80), ind("Herramienta de cobertura configurada", herramienta)],
+                [ind(f"Cobertura en {sonar_.get('servidor') or 'Sonar'}: {v:.1f}%", v >= 80), ind("Herramienta de cobertura configurada", herramienta)],
                 razon=min(1.0, v / 80), nivel=nivel)
 
 
@@ -503,17 +503,56 @@ def pipeline_pruebas(c: Contexto):
     return _res("pipeline_pruebas", "Pruebas en el pipeline", inds)
 
 
+LETRA = {"1.0": "A", "2.0": "B", "3.0": "C", "4.0": "D", "5.0": "E"}
+
+
+def _dias(desde: str, hasta: str) -> int:
+    return (dt.date.fromisoformat(hasta) - dt.date.fromisoformat(desde)).days
+
+
 def sonar(c: Contexto):
     s = c.ev.get("sonar")
     if not s:
         return _res("sonar", "SonarQube", [ind("No hay configuración de SonarQube/SonarCloud en el repositorio", False)], razon=0.0)
-    medidas = s.get("medidas") or {}
-    inds = [ind(f"Sonar configurado (projectKey: {s.get('clave') or 'no identificado'})", True)]
-    if medidas:
-        inds.append(ind("Medidas públicas en SonarCloud: " + ", ".join(f"{k}={v}" for k, v in medidas.items()), True))
-    else:
-        inds.append(ind("No se pudieron leer las medidas (no está en SonarCloud o no es público)"))
-    return _res("sonar", "SonarQube", inds, razon=1.0 if medidas else 0.6)
+    m = s.get("medidas") or {}
+    pipeline = s.get("pipeline") or []
+    inds = [ind(f"Sonar configurado (projectKey: {s.get('clave') or 'no identificado'})", True),
+            ind(f"{len(pipeline)} pipeline(s) ejecutan el análisis de Sonar"
+                + (f"; última ejecución: {', '.join(w['ultima'] or 'sin ejecuciones' for w in pipeline)}" if pipeline else ""),
+                bool(pipeline) and any(w["ultima"] == "success" for w in pipeline))]
+    if not m:
+        inds.append(ind("No se pudieron leer los resultados (no está en SonarCloud, es privado o es un SonarQube "
+                        "sin acceso para el agente); verificar en el tablero de Sonar"))
+        return _res("sonar", "SonarQube", inds, razon=0.6 if pipeline else 0.4)
+    inds[0]["texto"] += f" en {s.get('servidor')}"
+    qg = s.get("quality_gate")
+    if qg:
+        fallas = s.get("condiciones_fallidas") or []
+        inds.append(ind("Quality gate: " + ("aprobado" if qg == "OK" else f"no aprobado ({'; '.join(fallas[:3]) or qg})"), qg == "OK"))
+    an = s.get("analisis") or {}
+    if an.get("ultimo"):
+        dias = _dias(an["ultimo"], c.ev["hasta"])
+        inds.append(ind(f"{an['hasta_corte']} análisis en {an['dias_con_analisis']} días distintos hasta el corte; "
+                        f"el último el {an['ultimo']} ({dias} días antes del corte)", dias <= 14 and an["dias_con_analisis"] >= 3))
+    elif an:
+        inds.append(ind("No hay análisis de Sonar anteriores a la fecha de corte", False))
+    calif = {k: LETRA.get(str(m.get(k)), "?") for k in ("sqale_rating", "reliability_rating", "security_rating") if m.get(k)}
+    if calif:
+        nombres = {"sqale_rating": "mantenibilidad", "reliability_rating": "fiabilidad", "security_rating": "seguridad"}
+        inds.append(ind("Calificaciones: " + ", ".join(f"{nombres[k]} {v}" for k, v in calif.items()),
+                        all(v in ("A", "B") for v in calif.values())))
+    if m.get("bugs") is not None:
+        deuda = int(m.get("sqale_index") or 0)
+        inds.append(ind(f"Problemas abiertos: {m.get('bugs')} bugs, {m.get('vulnerabilities', 0)} vulnerabilidades, "
+                        f"{m.get('code_smells', 0)} code smells, {m.get('security_hotspots', 0)} security hotspots; "
+                        f"deuda técnica {deuda // 60} h {deuda % 60} min",
+                        int(m.get("bugs") or 0) == 0 and int(m.get("vulnerabilities") or 0) == 0))
+    if m.get("duplicated_lines_density") is not None:
+        d = float(m["duplicated_lines_density"])
+        inds.append(ind(f"Código duplicado: {d:.1f}% de las líneas", d <= 3))
+    if m.get("ncloc"):
+        inds.append(ind(f"Tamaño analizado: {int(m['ncloc']):,} líneas de código".replace(",", ".")))
+    return _res("sonar", "SonarQube", inds)
 
 
 def metricas_docs(c: Contexto):

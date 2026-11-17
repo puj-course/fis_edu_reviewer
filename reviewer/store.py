@@ -103,6 +103,13 @@ CREATE TABLE IF NOT EXISTS fis.milestones (
     repo text NOT NULL, equipo text NOT NULL, titulo text NOT NULL, estado text,
     vence timestamptz, cerrado timestamptz, abiertas int, cerradas int, PRIMARY KEY (repo, titulo)
 );
+CREATE TABLE IF NOT EXISTS fis.sonar (
+    repo text PRIMARY KEY, equipo text NOT NULL, servidor text, clave text, url text, quality_gate text,
+    condiciones_fallidas text, analisis int, dias_con_analisis int, ultimo_analisis date, pipelines int,
+    pipeline_ok boolean, cobertura numeric, bugs int, vulnerabilidades int, code_smells int, hotspots int,
+    duplicacion numeric, deuda_min int, mantenibilidad text, fiabilidad text, seguridad text, lineas int,
+    actualizado timestamptz DEFAULT now()
+);
 
 -- Vistas para los tableros: siempre la revisión más reciente de cada equipo y entrega.
 CREATE OR REPLACE VIEW fis.v_revision_actual AS
@@ -225,8 +232,27 @@ class Almacen:
             )
             self._hechos(cur, ev, cfg, repo, equipo)
 
+    @staticmethod
+    def _sonar(cur, s: dict | None, repo: str, equipo: str) -> None:
+        cur.execute("DELETE FROM fis.sonar WHERE repo = %s", (repo,))
+        if not s:
+            return
+        m, an, wf = s.get("medidas") or {}, s.get("analisis") or {}, s.get("pipeline") or []
+        num = lambda k, f=float: f(float(m[k])) if m.get(k) not in (None, "") else None
+        letra = lambda k: {"1.0": "A", "2.0": "B", "3.0": "C", "4.0": "D", "5.0": "E"}.get(str(m.get(k))) if m.get(k) else None
+        cur.execute(
+            "INSERT INTO fis.sonar VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s)",
+            (repo, equipo, s.get("servidor"), s.get("clave"), s.get("url"), s.get("quality_gate"),
+             "; ".join(s.get("condiciones_fallidas") or []) or None, an.get("hasta_corte"), an.get("dias_con_analisis"),
+             an.get("ultimo"), len(wf), any(w.get("ultima") == "success" for w in wf) if wf else None,
+             num("coverage"), num("bugs", int), num("vulnerabilities", int), num("code_smells", int),
+             num("security_hotspots", int), num("duplicated_lines_density"), num("sqale_index", int),
+             letra("sqale_rating"), letra("reliability_rating"), letra("security_rating"), num("ncloc", int)),
+        )
+
     def _hechos(self, cur, ev: dict, cfg: dict, repo: str, equipo: str) -> None:
         c = Contexto(ev, cfg)
+        self._sonar(cur, ev.get("sonar"), repo, equipo)
         for tabla in ("commits", "issues", "pull_requests", "pipelines", "milestones"):
             cur.execute(f"DELETE FROM fis.{tabla} WHERE repo = %s", (repo,))
         cur.executemany(

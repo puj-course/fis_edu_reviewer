@@ -39,6 +39,10 @@ Necesita dos credenciales, que nunca se suben al repositorio:
 
 2. **Clave de la API de DeepSeek** (opcional: sin ella el agente trabaja solo con indicadores).
 
+3. **Sonar** (opcional). Con proyectos públicos en SonarCloud no hace falta nada. Para proyectos
+   privados de SonarCloud, `FIS_SONARCLOUD_TOKEN`; para un SonarQube propio del curso, `FIS_SONAR_URL`
+   y `FIS_SONAR_TOKEN` (usuario con permiso *Browse* sobre los proyectos). Van en `deploy/.env`.
+
 ## 3. Instalar
 
 ```bash

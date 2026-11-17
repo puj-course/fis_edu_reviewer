@@ -97,6 +97,22 @@ filas, así se puede ver la evolución semana a semana.
 
 Metabase lee con el usuario `fis_lectura`, que solo tiene `SELECT` sobre el esquema `fis`.
 
+## Calidad del código con Sonar (`collect._sonar` y `checks.sonar`)
+
+El agente **no ejecuta análisis**: la rúbrica evalúa que el equipo integró Sonar en su pipeline, así que
+lee los análisis que ese pipeline produjo. Encuentra la clave del proyecto (`sonar.projectKey` o, si
+no aparece, `<org>_<repo>` y `<repo>`) y consulta, en SonarCloud y en el SonarQube del curso si
+`FIS_SONAR_URL` está definido:
+
+- medidas: cobertura, bugs, vulnerabilidades, code smells, security hotspots, duplicación, deuda
+  técnica, calificaciones de mantenibilidad, fiabilidad y seguridad, líneas de código;
+- el **quality gate** y las condiciones que fallan;
+- el historial de **análisis** hasta la fecha de corte (cuántos, en cuántos días, el último), para ver
+  si Sonar corre de forma continua o solo se ejecutó una vez antes de la entrega;
+- qué pipelines del repo ejecutan Sonar y si su última ejecución fue exitosa.
+
+El resultado queda en `fis.sonar` (una fila por repo) y en el sitio: tabla en el Panorama y en cada equipo.
+
 ## Sitio web del profesor (puerto 8090, con inicio de sesión)
 
 El revisor regenera después de cada corrida unas páginas estáticas (`reviewer/sitio.py`) con la

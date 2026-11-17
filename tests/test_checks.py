@@ -158,3 +158,25 @@ def test_anonimizador_ida_y_vuelta():
     oculto = anon.ocultar("ana-dev y Ana María Pérez (ana@correo.co) trabajaron con @beto")
     assert "ana" not in oculto.lower() and "beto" not in oculto
     assert anon.revelar("Estudiante A hizo el commit") == "@ana-dev hizo el commit"
+
+
+def test_sonar_quality_gate_y_analisis():
+    from reviewer import checks as ch
+
+    c = ch.Contexto.__new__(ch.Contexto)
+    c.ev = {"hasta": "2026-11-17", "sonar": {
+        "clave": "puj-course_X", "servidor": "SonarCloud", "pipeline": [{"nombre": "CI", "ultima": "success"}],
+        "medidas": {"coverage": "85.0", "bugs": "2", "vulnerabilities": "0", "code_smells": "40", "security_hotspots": "1",
+                    "duplicated_lines_density": "1.2", "sqale_index": "125", "sqale_rating": "1.0",
+                    "reliability_rating": "3.0", "security_rating": "1.0", "ncloc": "5000"},
+        "quality_gate": "ERROR", "condiciones_fallidas": ["new_coverage LT 80 (valor 60)"],
+        "analisis": {"total": 1, "hasta_corte": 1, "dias_con_analisis": 1, "ultimo": "2026-11-16"}}}
+    r = ch.sonar(c)
+    textos = {i["texto"]: i["ok"] for i in r["indicadores"]}
+    assert textos["Quality gate: no aprobado (new_coverage LT 80 (valor 60))"] is False
+    assert any("fiabilidad C" in t and ok is False for t, ok in textos.items())
+    assert any(t.startswith("1 análisis en 1 días") and ok is False for t, ok in textos.items())
+    assert any("deuda técnica 2 h 5 min" in t for t in textos)
+    assert 0 < r["razon"] < 1
+    c.ev["sonar"] = None
+    assert ch.sonar(c)["razon"] == 0.0
