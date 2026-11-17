@@ -100,17 +100,41 @@ iframe.tablero{width:100%;min-height:1200px;border:1px solid var(--bd);border-ra
 .nivel{border:1px solid var(--bd);border-radius:10px;padding:10px;font-size:13px}.nivel b{display:block}
 footer{color:var(--mut);font-size:12px;text-align:center;padding:24px 16px;border-top:1px solid var(--bd)}
 @media (max-width:600px){.hero h1{font-size:23px}.marca .c{font-size:16px}.kpi .v{font-size:24px}}
+.subnav{display:flex;justify-content:space-between;align-items:center;gap:10px;flex-wrap:wrap;background:var(--card);border:1px solid var(--bd);
+border-radius:12px;padding:8px 10px;margin-bottom:16px;box-shadow:var(--sombra)}
+.subnav .grupo{display:flex;gap:6px;flex-wrap:wrap;align-items:center}.subnav .et{font-size:12px;color:var(--mut);font-weight:700;
+text-transform:uppercase;letter-spacing:.06em;margin-right:2px}
+nav .sep{width:1px;background:rgba(255,255,255,.25);margin:6px 6px 0}
 """
 
-NAV = [("", "Panorama"), ("revisiones", "Revisiones"), ("agil", "Ágil"), ("rubricas", "Rúbricas"), ("tableros", "Tableros"), ("calidad", "Sonar"),
-       ("estudiantes", "Estudiantes"), ("ia", "Uso de IA"), ("agente", "El agente")]
+# Primero lo que se analiza (de lo general a cada equipo y estudiante); después, la operación del agente.
+NAV = [("", "Panorama"), ("equipos", "Equipos"), ("agil", "Ágil"), ("calidad", "Sonar"), ("estudiantes", "Estudiantes"),
+       ("ia", "Uso de IA"), ("tableros", "Tableros"), None, ("revisiones", "Revisiones"), ("rubricas", "Rúbricas"), ("agente", "El agente")]
+
+
+def corto(eq: str) -> str:
+    """Nombre corto del equipo para botones: FIS_2630_1204_G1 → G1."""
+    return eq.rsplit("_", 1)[-1] if "_" in eq else eq
+
+
+def barra_equipo(r: str, eq: str, equipos: list[str], vista: str, repo: str = "", acciones: str = "") -> str:
+    """Subnavegación común de las vistas de un equipo: cambiar de equipo sin perder la vista y cambiar de vista."""
+    destino = {"resumen": "equipos", "agil": "agil"}
+    eqs = "".join(f'<a class="btn peq {"" if e == eq else "sec"}" href="{r}{destino[vista]}/{E(e)}" title="{E(e)}">{E(corto(e))}</a>'
+                  for e in equipos)
+    vistas = (f'<a class="btn peq {"" if vista == "resumen" else "sec"}" href="{r}equipos/{E(eq)}">Resumen y rúbrica</a>'
+              f'<a class="btn peq {"" if vista == "agil" else "sec"}" href="{r}agil/{E(eq)}">Metodología ágil</a>'
+              + (f'<a class="btn peq sec" href="https://github.com/{E(repo)}">GitHub ↗</a>' if repo else ""))
+    return (f'<div class="subnav"><div class="grupo"><span class="et">Equipo</span>{eqs}</div>'
+            f'<div class="grupo"><span class="et">Vista</span>{vistas}{acciones}</div></div>')
 
 
 def pagina(titulo: str, cuerpo: str, r: str = "", activo: str = "", usuario: dict | None = None, aviso: str = "",
            tipo_aviso: str = "ok", refrescar: int = 0) -> str:
     """Documento completo. `r` = prefijo relativo hasta la raíz del portal ("", "../", ...)."""
     items = NAV + ([("admin", "Administración")] if usuario and usuario.get("rol") == "admin" else [])
-    nav = "".join(f'<a href="{r}{ruta}"{" class=on" if ruta == activo else ""}>{nombre}</a>' for ruta, nombre in items)
+    nav = "".join('<span class="sep"></span>' if it is None else
+                  f'<a href="{r}{it[0]}"{" class=on" if it[0] == activo else ""}>{it[1]}</a>' for it in items)
     quien = (f'<span class="quien"><a href="{r}cuenta">{E(usuario["nombre"])}</a></span>' if usuario else "")
     salir = f'<form method="post" action="{r}salir" class="enlinea"><input type="hidden" name="csrf" value="{E(usuario.get("csrf", ""))}">'             f'<button class="salir">Salir</button></form>' if usuario else ""
     msj = f'<div class="flash {tipo_aviso}" role="status">{aviso}</div>' if aviso else ""
@@ -154,6 +178,32 @@ def _chip_nota(v) -> str:
     if v is None:
         return '<span class="mut">—</span>'
     return f'<span class="chip {_clase_nota(v)}">{float(v):.2f}</span>'
+
+
+def chip_pct(v, bueno=0.8, medio=0.5) -> str:
+    if v is None:
+        return '<span class="chip neu">—</span>'
+    v = float(v)
+    return f'<span class="chip {"ok" if v >= bueno else "warn" if v >= medio else "bad"}">{v * 100:.0f}%</span>'
+
+
+def _agil_corto(a: dict | None, r: str, eq: str) -> str:
+    """Estado ágil de un equipo en una línea, con enlace a su vista ágil."""
+    if not a:
+        return '<span class="mut">sin análisis ágil</span>'
+    activo = '<span class="chip ok">sprint en curso</span>' if a["sprint_activo"] else '<span class="chip bad">sin sprint en curso</span>'
+    altos = int(a.get("ia_llm_altos") or 0)
+    ia = f' <span class="chip {"bad" if altos >= 10 else "warn" if altos else "ok"}" title="registros de ceremonias con indicio fuerte de IA">{altos} con IA</span>'
+    return f'<a href="{r}agil/{E(eq)}">{chip_pct(a["cumplimiento"])}</a> {activo}{ia}'
+
+
+def _sonar_corto(s: dict | None, r: str) -> str:
+    if not s:
+        return '<span class="mut">sin análisis</span>'
+    if s.get("error"):
+        return '<span class="chip bad">falló</span>'
+    return f'<a href="{r}calidad" style="text-decoration:none">{_chip_qg(s.get("quality_gate"))} ' \
+           f'{_letra(s.get("mantenibilidad"))}{_letra(s.get("fiabilidad"))}{_letra(s.get("seguridad"))}</a>'
 
 
 def _chip_ia(directas: int, indirectas: int) -> str:
@@ -440,7 +490,7 @@ class Datos:
         self.revisiones = q("SELECT * FROM fis.v_revision_actual ORDER BY equipo, entrega")
         self.vacio = not self.revisiones
         if self.vacio:
-            self.rev_eq, self.equipo_de, self.sonar_eq, self.sonar_int = {}, {}, {}, {}
+            self.rev_eq, self.equipo_de, self.sonar_eq, self.sonar_int, self.agil = {}, {}, {}, {}, {}
             return
         historia = q("""SELECT DISTINCT ON (equipo, entrega, revisada::date) equipo, entrega, entrega_nombre,
                                revisada::date AS dia, pre_nota
@@ -462,6 +512,7 @@ class Datos:
                            FROM fis.commits WHERE NOT es_merge) t WHERE n <= 12""")
         self.sonar_eq = {r["equipo"]: r for r in q("SELECT * FROM fis.sonar")}
         self.sonar_int = {r["equipo"]: r for r in q("SELECT * FROM fis.sonar_interno")}
+        self.agil = {r["equipo"]: r for r in q("SELECT * FROM fis.agil_resumen")}
         self.actividad = {r["equipo"]: r for r in q("""
             SELECT equipo, count(*) FILTER (WHERE NOT es_merge) AS commits,
                    round(100.0 * avg(convencional::int) FILTER (WHERE NOT es_merge)) AS conv,
@@ -519,7 +570,10 @@ def panorama(d: Datos, cfg: dict, r: str) -> str:
         act = d.actividad.get(eq, {})
         tarjetas.append(f"""<div class="card"><h3><a href="{r}equipos/{E(eq)}">{E(eq)}</a></h3>
 <div class="mut" style="font-size:13px">{filas[0]['integrantes']} integrantes · {_num(act.get('commits'))} commits · último {E(str(act.get('ultimo') or '')[:10])}</div>
-<div style="margin:10px 0">{notas}</div><div>{_chip_ia(di, ii)}</div></div>""")
+<div style="margin:10px 0">{notas}</div>
+<div class="fila" style="margin:3px 0"><span>Ágil</span><span>{_agil_corto(d.agil.get(eq), r, eq)}</span></div>
+<div class="fila" style="margin:3px 0"><span>Sonar interno</span><span>{_sonar_corto(d.sonar_int.get(eq), r)}</span></div>
+<div style="margin-top:8px">{_chip_ia(di, ii)}</div></div>""")
     barras_eq = _barras_h([(eq, next((f["pre_nota"] for f in filas if f["entrega"] == ent), None), f"{r}equipos/{eq}")
                            for eq, filas in d.rev_eq.items()])
     series = {eq: [(f["dia"], f["pre_nota"]) for f in filas if f["entrega"] == ent] for eq, filas in d.hist_eq.items()}
@@ -555,14 +609,9 @@ def panorama(d: Datos, cfg: dict, r: str) -> str:
 <h2>Mapa de criterios · {nombre_actual}</h2><p class="mut">Puntaje sugerido por criterio (0 a 5). «profesor» = criterio que solo califica el profesor.
 <a href="{r}rubricas/{E(ent or '')}">Ver la rúbrica</a>.</p>
 {_mapa_calor(list(d.rev_eq), nombres_cr, celdas, lambda eq: f"{r}equipos/{eq}")}
-<h2>Calidad del código (Sonar)</h2><p class="mut">Resultados de los análisis que corre el pipeline de cada equipo.
-Bugs / vulnerabilidades / code smells / security hotspots abiertos. Calificaciones de A (mejor) a E.</p>
-{_tabla(["Equipo"] + ENC_SONAR, [_fila_sonar(d.sonar_eq[eq], f'<a href="{r}equipos/{E(eq)}">{E(eq)}</a>') for eq in d.rev_eq if eq in d.sonar_eq])}
-<h2>Sonar interno (perfil común del curso)</h2><p class="mut">Análisis del agente en el commit de la fecha de corte, con las
-mismas reglas para todos. *Sin compilar ni ejecutar pruebas: no mide cobertura. <a href="{r}calidad">Abrir SonarQube</a>.</p>
-{_tabla(["Equipo"] + ENC_INTERNO, [_fila_interno(d.sonar_int[eq], r, f'<a href="{r}equipos/{E(eq)}">{E(eq)}</a>') for eq in d.rev_eq if eq in d.sonar_int])
- if d.sonar_int else f'<p class="mut">Aún no hay análisis internos. Pídalos en <a href="{r}revisiones">Revisiones</a> con «Sonar interno».</p>'}
-<h2>Equipos</h2><div class="grid">{''.join(tarjetas)}</div>
+<h2>Equipos</h2><p class="mut">Cada tarjeta resume pre-nota, metodología ágil y calidad del código.
+La comparación completa está en <a href="{r}equipos">Equipos</a>, <a href="{r}agil">Ágil</a> y <a href="{r}calidad">Sonar</a>.</p>
+<div class="grid">{''.join(tarjetas)}</div>
 <h2>Hallazgos principales (última entrega revisada)</h2>{_tabla(['Equipo', 'Entrega', 'Lo que no se cumple'], hallazgos)}""")
 
 
@@ -602,7 +651,7 @@ sin contar archivos generados (lockfiles, imágenes, datos).<br><br>
 <b>Límite importante:</b> ninguna revisión de GitHub puede asegurar que <i>no</i> se usó IA. Copiar y pegar desde un chat no deja
 rastro. Las señales indirectas solo dicen a quién y sobre qué commit preguntar en la sustentación.</div></div>
 <h2>Por estudiante</h2>{_tabla(['Estudiante', 'Equipo', 'Resultado', 'Detalle'], filas_ia)}
-<h2>A nivel de equipo</h2>{_tabla(['Equipo', 'Tipo', 'Detalle', 'Referencias'], filas_eq)}"""
+<h2>A nivel de equipo</h2>{_tabla(['Equipo', 'Tipo', 'Detalle', 'Referencias'], filas_eq)}{ia_en_ceremonias(d, r)}"""
 
 
 def equipo(d: Datos, r: str, eq: str, acciones: str = "") -> str | None:
@@ -642,11 +691,24 @@ def equipo(d: Datos, r: str, eq: str, acciones: str = "") -> str | None:
     dona = _dona([(a["login"], float(a["commits"] or 0), SERIES[k % len(SERIES)]) for k, a in enumerate(miembros)],
                  _num(sum(int(a["commits"] or 0) for a in miembros)), "commits")
     revisada = d.revisada.get(eq)
-    return (_hero(f'Equipo · <a href="https://github.com/{E(repo)}" style="color:inherit">{E(repo)}</a>', E(eq),
-                  f"Última revisión: {revisada:%d/%m/%Y %H:%M}." if revisada else "", acciones)
+    ag = d.agil.get(eq)
+    tarjeta_agil = ""
+    if ag:
+        comp = " · ".join(f"{n} {float(ag[k] or 0) * 100:.0f}%" for k, n in
+                          (("planning", "Planning"), ("dailies", "Dailies"), ("review", "Review"), ("retro", "Retro"), ("continuidad", "Continuidad")))
+        tarjeta_agil = (f'<div class="card" style="margin-top:14px"><div class="fila"><h3>Metodología ágil</h3>'
+                        f'<a class="btn peq sec" href="{r}agil/{E(eq)}">Ver sprints y ceremonias</a></div>'
+                        f'<p style="margin:4px 0">{_agil_corto(ag, r, eq)} <span class="chip neu">calidad media {ag["calidad_media"] or 0}</span></p>'
+                        f'<p class="mut" style="font-size:13px;margin:0">{comp}'
+                        + (f' · <b>días hábiles sin sprint:</b> {E(ag["huecos"])}' if ag.get("huecos") else "") + "</p></div>")
+    return (barra_equipo(r, eq, sorted(d.rev_eq), "resumen", repo, acciones)
+            + _hero(f'Equipo · <a href="https://github.com/{E(repo)}" style="color:inherit">{E(repo)}</a>', E(eq),
+                    f"Última revisión: {revisada:%d/%m/%Y %H:%M}." if revisada else "")
             + _kpis([(_chip_nota(filas[-1]["pre_nota"]), f"pre-nota · {filas[-1]['entrega_nombre']}"),
+                     (chip_pct(ag["cumplimiento"]) if ag else "—", "cumplimiento ágil"),
                      (str(filas[0]["integrantes"]), "integrantes"), (_num(act.get("commits")), "commits"),
                      (f'{act.get("conv") or 0:.0f}%', "commits convencionales"), (f'{act.get("ref") or 0:.0f}%', "commits con issue")])
+            + tarjeta_agil
             + f"""<div class="g2" style="margin-top:14px"><div class="card"><h3>Reparto de commits</h3>{dona}</div>
 <div class="card"><h3>Commits por semana</h3>{_barras(sorted(por_sem.items()))}</div></div>
 <h2>Integrantes</h2>{_tabla(['Estudiante', 'Commits', 'Semanas', 'Issues cerradas', 'PRs', 'Revisiones', 'Líneas', 'Factor sugerido'], integrantes, {1, 3, 4, 5, 6, 7})}
@@ -710,6 +772,55 @@ def estudiantes(d: Datos, r: str) -> str:
     return (_hero("Récord individual", "Estudiantes",
                   f"{len(d.equipo_de)} estudiantes en {len(d.rev_eq)} equipos. Abra un estudiante para ver su récord y las preguntas de sustentación.")
             + _tabla(["Estudiante", "Equipo", "Commits", "Semanas", "Issues cerradas", "Factor sugerido", "Uso de IA"], filas, {2, 4}))
+
+
+def equipos(d: Datos, r: str) -> str:
+    """Índice de equipos: una fila por equipo con todas las dimensiones, para comparar y entrar a cada uno."""
+    if d.vacio:
+        return _sin_datos(r, "Equipos")
+    filas = []
+    for eq in sorted(d.rev_eq):
+        rv = d.rev_eq[eq]
+        actual = next((f for f in rv if f["entrega"] == d.ent_actual), rv[-1])
+        act = d.actividad.get(eq, {})
+        di, ii = Datos.ia_cuenta(d.ia_eq.get(eq, []))
+        revisada = d.revisada.get(eq)
+        filas.append([f'<a href="{r}equipos/{E(eq)}"><b>{E(eq)}</b></a>', _chip_nota(actual["pre_nota"]),
+                      _agil_corto(d.agil.get(eq), r, eq), _sonar_corto(d.sonar_int.get(eq), r),
+                      _chip_qg((d.sonar_eq.get(eq) or {}).get("quality_gate")), _chip_ia(di, ii),
+                      f'{_num(act.get("commits"))} · último {str(act.get("ultimo") or "")[:10]}',
+                      f"{revisada:%d/%m %H:%M}" if revisada else "—"])
+    return (_hero(f"{len(d.rev_eq)} equipos", "Equipos",
+                  "Todas las dimensiones de cada equipo en una fila. Abra un equipo para ver su rúbrica, integrantes, Sonar y metodología ágil.",
+                  f'<a class="btn" href="{r}revisiones">Revisar ahora</a>')
+            + _tabla(["Equipo", f"Pre-nota · {dict(d.entregas).get(d.ent_actual, '')}", "Ágil", "Sonar interno", "Sonar del equipo",
+                      "Uso de IA (GitHub)", "Commits", "Revisado"], filas))
+
+
+def calidad(d: Datos, r: str) -> str:
+    """Comparación de Sonar: el análisis interno del curso frente al Sonar que configuró cada equipo."""
+    eqs = sorted(d.rev_eq)
+    interno = (_tabla(["Equipo"] + ENC_INTERNO, [_fila_interno(d.sonar_int[eq], r, f'<a href="{r}equipos/{E(eq)}">{E(eq)}</a>')
+                                                 for eq in eqs if eq in d.sonar_int])
+               if d.sonar_int else f'<p class="mut">Aún no hay análisis internos. Pídalos en <a href="{r}revisiones">Revisiones</a> con «Sonar interno».</p>')
+    propio = _tabla(["Equipo"] + ENC_SONAR, [_fila_sonar(d.sonar_eq[eq], f'<a href="{r}equipos/{E(eq)}">{E(eq)}</a>') for eq in eqs if eq in d.sonar_eq])
+    return (f"""<h2>Sonar interno (perfil común del curso)</h2><p class="mut">El agente analiza cada equipo en el commit de la fecha de
+corte con las mismas reglas para todos. *Sin compilar ni ejecutar pruebas: no mide cobertura. Abra «perfil del curso» para ver los problemas.</p>{interno}
+<h2>Sonar del equipo (su pipeline)</h2><p class="mut">Lo que cada equipo configuró en SonarCloud. Compárelo con el interno: si su análisis
+cubre menos código o reglas más suaves, la diferencia aparece aquí.</p>{propio}""")
+
+
+def ia_en_ceremonias(d: Datos, r: str) -> str:
+    """Cruce con la pestaña Ágil: textos de ceremonias que suenan generados."""
+    if not d.agil:
+        return ""
+    filas = [[f'<a href="{r}agil/{E(eq)}">{E(eq)}</a>', f'<b>{a.get("ia_llm_altos") or 0}</b>',
+              f'{float(a["ia_llm_media"]) * 100:.0f}%' if a.get("ia_llm_media") is not None else "—",
+              f'<a class="btn peq sec" href="{r}agil/{E(eq)}?orden=ia">Ver los más sospechosos</a>']
+             for eq, a in sorted(d.agil.items())]
+    return ("<h2>En las ceremonias ágiles</h2><p class='mut'>Plannings, dailies, reviews y retrospectivas cuyo texto suena generado "
+            "(juicio de la IA ≥ 70%). Es un indicio para preguntar, no una prueba.</p>"
+            + _tabla(["Equipo", "Registros con indicio fuerte", "Media", ""], filas))
 
 
 def _agrupar(filas: list[dict], claves: tuple) -> dict:

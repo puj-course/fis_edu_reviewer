@@ -19,19 +19,20 @@ cierra la sesión. Todo lo que se ve sale en el momento de la base de datos.
 
 | Para… | Vaya a |
 |---|---|
-| Ver si un equipo ya actualizó y revisarlo ya | **Revisiones**: último push frente a última revisión, botón «Revisar»; o en el equipo, «Revisar este equipo ahora» |
+| Comparar todos los equipos en una tabla y entrar a uno | **Equipos**: pre-nota, cumplimiento ágil, Sonar interno, Sonar del equipo y uso de IA por equipo. Dentro de un equipo, la barra superior cambia de equipo sin perder la vista (Resumen y rúbrica · Metodología ágil) |
+| Ver si un equipo ya actualizó y revisarlo ya | **Revisiones**: último push frente a última revisión, botón «Revisar»; o en cualquier vista del equipo, «Revisar ahora» |
 | Seguir una revisión | **Revisiones → #n**: estado, duración y registro en vivo; se puede cancelar |
 | Ver con qué se evalúa cada entrega | **Rúbricas**: criterios, pesos, niveles y qué verifica el agente; los administradores las editan |
-| Revisar sprints y ceremonias (planning, dailies, review, retro) | **Ágil**: cumplimiento por equipo; en cada equipo, sprints, semana a semana y cada registro con su texto completo, comentarios, calidad e indicios de IA (filtros por tipo, «más sospechosos de IA», «menor calidad») |
+| Revisar sprints y ceremonias (planning, dailies, review, retro) | **Ágil**: cumplimiento por equipo y la columna «Qué revisar» con las alertas de cada uno; en cada equipo, sprints, semana a semana y cada registro con su texto completo, comentarios, calidad e indicios de IA (filtros por tipo, «más sospechosos de IA», «menor calidad») |
 | Ver los tableros de Metabase | **Tableros** (incrustados, con filtros por equipo y entrega) |
-| Revisar la calidad del código con las mismas reglas para todos | **Sonar** (SonarQube del curso incrustado). Pida la revisión con «Sonar interno»: analiza el commit de la fecha de corte, aunque el equipo no tenga Sonar |
+| Revisar la calidad del código con las mismas reglas para todos | **Sonar**: comparación del análisis interno frente al Sonar de cada equipo y, debajo, el SonarQube del curso incrustado. Pida la revisión con «Sonar interno»: analiza el commit de la fecha de corte, aunque el equipo no tenga Sonar |
 | Cambiar fechas de corte, equipos o la revisión programada | **Administración** |
 | Dar acceso a un colega | **Administración → Nuevo usuario** (la contraseña se muestra una sola vez) |
 | Cambiar su contraseña | Su nombre, arriba a la derecha → **Mi cuenta** |
 
 | Página | Para qué usarla |
 |---|---|
-| **Panorama** | Ver de un vistazo cómo va cada equipo: indicadores del curso, pre-nota por equipo, evolución entre revisiones, mapa de criterios (equipo × criterio), estado de uso de IA y hallazgos principales. |
+| **Panorama** | Ver de un vistazo cómo va cada equipo: indicadores del curso, pre-nota por equipo, evolución entre revisiones, mapa de criterios (equipo × criterio), tarjetas por equipo con su estado ágil y su Sonar interno, uso de IA y hallazgos principales. |
 | **El agente** | Presentar el agente a colegas: cómo trabaja, qué revisa (gestión ágil, código, arquitectura, calidad y DevOps) y las rúbricas de cada entrega con sus pesos. |
 | **Estudiantes** | Listado con commits, semanas activas, factor sugerido y uso de IA de cada estudiante. |
 | **Uso de IA** | Revisar, estudiante por estudiante, si hay evidencia directa o señales indirectas, con enlace al commit en GitHub. |

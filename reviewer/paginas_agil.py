@@ -6,7 +6,7 @@ import json
 from collections import defaultdict
 
 from .agil import NOMBRE, ORDEN
-from .sitio import E, _hero, _kpis, _tabla
+from .sitio import E, _hero, _kpis, _tabla, barra_equipo
 
 CSS_EXTRA = """<style>
 .reg{border:1px solid var(--bd);border-radius:12px;background:var(--card);margin-bottom:10px;box-shadow:var(--sombra)}
@@ -63,9 +63,30 @@ def resumen(q, r: str) -> str:
                      'Úselo para decidir qué preguntar.</div>')
     if not filas:
         return explicacion + f'<p class="mut" style="margin-top:14px">Aún no hay análisis ágil. Pida una revisión en <a href="{r}revisiones">Revisiones</a>.</p>'
-    tabla = _tabla(["Equipo", "Cumplimiento", "Planning", "Dailies", "Review", "Retro", "Continuidad", "Sprint en curso",
+    faltas = {x["equipo"]: x for x in q("""
+        SELECT equipo, count(*) FILTER (WHERE coalesce(planning, '') = '') AS planning,
+               count(*) FILTER (WHERE coalesce(review, '') = '') AS review, count(*) FILTER (WHERE coalesce(retro, '') = '') AS retro
+        FROM fis.agil_sprints WHERE NOT en_curso GROUP BY equipo""")}
+
+    def alertas(f) -> str:
+        """Lo que conviene revisar primero en cada equipo, con enlace directo."""
+        base = f'{r}agil/{E(f["equipo"])}'
+        x = faltas.get(f["equipo"]) or {}
+        items = []
+        if not f["sprint_activo"]:
+            items.append('<span class="chip bad">sin sprint en curso</span>')
+        sin = [f'{x[k]} sin {n}' for k, n in (("planning", "planning"), ("review", "review"), ("retro", "retro")) if x.get(k)]
+        if sin:
+            items.append(f'<span class="chip warn">sprints: {", ".join(sin)}</span>')
+        if f["sin_contenido"]:
+            items.append(f'<a class="chip warn" href="{base}?orden=calidad">{f["sin_contenido"]} vacíos</a>')
+        if f["ia_llm_altos"]:
+            items.append(f'<a class="chip bad" href="{base}?orden=ia">{f["ia_llm_altos"]} con IA</a>')
+        return " ".join(items) or '<span class="chip ok">sin alertas</span>'
+
+    tabla = _tabla(["Equipo", "Cumplimiento", "Qué revisar", "Planning", "Dailies", "Review", "Retro", "Continuidad", "Sprint en curso",
                     "Calidad media", "Sin contenido", "IA (media · altos)"],
-                   [[f'<a href="{r}agil/{E(f["equipo"])}">{E(f["equipo"])}</a>', _chip_pct(f["cumplimiento"]), _pct(f["planning"]),
+                   [[f'<a href="{r}agil/{E(f["equipo"])}">{E(f["equipo"])}</a>', _chip_pct(f["cumplimiento"]), alertas(f), _pct(f["planning"]),
                      _pct(f["dailies"]), _pct(f["review"]), _pct(f["retro"]), _pct(f["continuidad"]),
                      '<span class="chip ok">sí</span>' if f["sprint_activo"] else '<span class="chip bad">no</span>',
                      _chip_calidad(f["calidad_media"]), f["sin_contenido"],
@@ -74,18 +95,20 @@ def resumen(q, r: str) -> str:
     return CSS_EXTRA + explicacion + "<h2>Comparación de equipos</h2>" + tabla
 
 
-def equipo(q, r: str, eq: str, tipo: str = "", orden: str = "fecha") -> str | None:
+def equipo(q, r: str, eq: str, tipo: str = "", orden: str = "fecha", abrir: int | None = None, acciones: str = "") -> str | None:
     res = q("SELECT * FROM fis.agil_resumen WHERE equipo = %s", eq)
     if not res:
         return None
     a = res[0]
     sprints = q("SELECT * FROM fis.agil_sprints WHERE equipo = %s ORDER BY orden", eq)
     regs = q("SELECT * FROM fis.agil_registros WHERE equipo = %s ORDER BY fecha, numero", eq)
+    todos = [x["equipo"] for x in q("SELECT equipo FROM fis.agil_resumen ORDER BY equipo")]
+    base = f"{r}agil/{E(eq)}"
 
-    # Sprints
+    # Sprints: cada #n lleva al registro ya abierto (sin JavaScript: el servidor lo marca abierto).
     filas_s = []
     for s in sprints:
-        enl = lambda nums: " ".join(f'<a href="#r{n}">#{n}</a>' for n in (nums or "").split(",") if n) or '<span class="chip bad">falta</span>'
+        enl = lambda nums: " ".join(f'<a href="{base}?abrir={n}#r{n}">#{n}</a>' for n in (nums or "").split(",") if n) or '<span class="chip bad">falta</span>'
         filas_s.append([f'<b>{E(s["titulo"])}</b>' + (' <span class="chip warn">en curso</span>' if s["en_curso"] else ""),
                         f'{s["inicio"]:%d/%m} – {s["fin"]:%d/%m}', f'{s["hechos"]}/{s["items"]}', f'{float(s["estimacion"] or 0):g}',
                         enl(s["planning"]), f'{s["dailies"]}/{s["dailies_esperados"]} {_chip_pct(min(s["dailies"] / max(s["dailies_esperados"], 1), 1), 0.7, 0.4)}',
@@ -130,7 +153,7 @@ def equipo(q, r: str, eq: str, tipo: str = "", orden: str = "fecha") -> str | No
             detalles.append(f'<b>Rasgos de estilo:</b> {E(x["ia_rasgos"])}')
         if x["ia_razones"]:
             detalles.append(f'<b>Juicio de la IA:</b> {E(x["ia_razones"])}')
-        tarjetas.append(f"""<details class="reg" id="r{x['numero']}"><summary><span class="chip t-{E(x['tipo'])}">{E(NOMBRE.get(x['tipo'], x['tipo']))}</span>
+        tarjetas.append(f"""<details class="reg" id="r{x['numero']}"{' open' if x['numero'] == abrir else ''}><summary><span class="chip t-{E(x['tipo'])}">{E(NOMBRE.get(x['tipo'], x['tipo']))}</span>
 <b>{x['fecha']:%d/%m/%Y}</b> <span>#{x['numero']} {E(x['titulo'])}</span> <span class="mut">{E(x['sprint'] or 'sin sprint')}</span>
 {_chip_calidad(x['calidad'])} {_chip_ia(x['ia_estilo'], x['ia_llm'])} {f'<span class="chip neu">{len(comentarios)} comentario(s)</span>' if comentarios else ''}</summary>
 <div class="cuerpo"><div class="meta">Autor <b>@{E(x['autor'] or '')}</b> · participantes: {E(', '.join('@' + p for p in (x['participantes'] or '').split(',') if p)) or '—'}
@@ -138,7 +161,6 @@ def equipo(q, r: str, eq: str, tipo: str = "", orden: str = "fecha") -> str | No
 {('<p style="font-size:14px">' + '<br>'.join(detalles) + '</p>') if detalles else ''}
 <pre class="texto">{E(x['texto'] or '(sin texto en la issue)')}</pre>{coms}</div></details>""")
 
-    base = f"{r}agil/{E(eq)}"
     filtro = lambda t, n: f'<a class="btn peq {"" if tipo == t else "sec"}" href="{base}?tipo={t}&orden={orden}">{n}</a>'
     ordenar = lambda o, n: f'<a class="btn peq {"" if orden == o else "sec"}" href="{base}?tipo={tipo}&orden={o}">{n}</a>'
     conteo = defaultdict(int)
@@ -152,9 +174,10 @@ def equipo(q, r: str, eq: str, tipo: str = "", orden: str = "fecha") -> str | No
     altos = [x for x in regs if (x["ia_llm"] is not None and float(x["ia_llm"]) >= 0.7) or float(x["ia_estilo"] or 0) >= 0.6]
     if altos:
         avisos.append(f"{len(altos)} registro(s) con fuerte indicio de texto generado con IA: "
-                      + " ".join(f'<a href="#r{x["numero"]}">#{x["numero"]}</a>' for x in altos[:15]))
-    return (CSS_EXTRA
-            + _hero(f'<a href="{r}agil">Metodología ágil</a> · <a href="{r}equipos/{E(eq)}">ver equipo</a>', E(eq),
+                      + " ".join(f'<a href="{base}?abrir={x["numero"]}#r{x["numero"]}">#{x["numero"]}</a>' for x in altos[:15])
+                      + f' · <a href="{base}?orden=ia">verlos ordenados</a>')
+    return (CSS_EXTRA + barra_equipo(r, eq, todos, "agil", a.get("repo") or "", acciones)
+            + _hero(f'<a href="{r}agil">Metodología ágil</a> · comparación de equipos', E(eq),
                     f"Corte {a['hasta']:%d/%m/%Y} · sprints según {E(a['fuente_sprints'])} · se esperan {a['dailies_por_semana']} dailies por semana.")
             + _kpis([(_chip_pct(a["cumplimiento"]), "cumplimiento ágil"), (str(len(sprints)), "sprints"),
                      ('sí' if a["sprint_activo"] else 'no', "sprint en curso"), (str(len(regs)), "registros de ceremonias"),

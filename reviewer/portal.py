@@ -388,20 +388,27 @@ def crear_app() -> Flask:
             abort(404)
         return responder(login, cuerpo, "estudiantes")
 
+    def acciones_equipo(repo: str) -> str:
+        """Botón para revisar un equipo ya, igual en todas sus vistas."""
+        if not repo:
+            return ""
+        con_ia = bool(os.environ.get("FIS_IA_DISPONIBLE") or os.environ.get("DEEPSEEK_API_KEY"))
+        return (f'<form method="post" action="{raiz()}revisiones" class="enlinea">{campo_csrf()}'
+                f'<input type="hidden" name="alcance" value="{E(repo)}"><input type="hidden" name="entrega" value="auto">'
+                f'<input type="hidden" name="con_ia" value="{1 if con_ia else 0}"><input type="hidden" name="sonar_interno" value="{1 if sonar_configurado() else 0}">'
+                f'<button class="btn peq">Revisar ahora</button></form>')
+
+    @app.get("/equipos")
+    def equipos():
+        return responder("Equipos", sitio.equipos(datos(), raiz()), "equipos")
+
     @app.get("/equipos/<eq>")
     def equipo(eq):
         d = datos()
-        c = cfg()
-        r = raiz()
-        acciones = (f'<form method="post" action="{r}revisiones" class="enlinea">{campo_csrf()}'
-                    f'<input type="hidden" name="alcance" value="{E(d.repo_de.get(eq, ""))}"><input type="hidden" name="entrega" value="auto">'
-                    f'<input type="hidden" name="con_ia" value="1"><input type="hidden" name="sonar_interno" value="{1 if sonar_configurado() else 0}">'
-                    f'<button class="btn">Revisar este equipo ahora</button></form>'
-                    f' <a class="btn sec" href="{r}agil/{E(eq)}">Metodología ágil</a>') if eq in d.repo_de else ""
-        cuerpo = sitio.equipo(d, r, eq, acciones)
+        cuerpo = sitio.equipo(d, raiz(), eq, acciones_equipo(d.repo_de.get(eq, "")))
         if cuerpo is None:
             abort(404)
-        return responder(eq, cuerpo, "")
+        return responder(eq, cuerpo, "equipos")
 
     # ------------------------------------------------------------ revisiones bajo demanda
     def chip_estado(e: str) -> str:
@@ -491,7 +498,10 @@ def crear_app() -> Flask:
                   + _kpis([(E(s["alcance"].split("/")[-1]), "alcance"), (E(s["entrega"]), "rúbrica"), ("sí" if s["con_ia"] else "no", "con IA"), ("sí" if s["sonar_interno"] else "no", "Sonar interno"),
                            (_duracion(s["inicio"], s["fin"]), "duración")])
                   + f'<h2>Registro</h2><pre class="log">{E(s["log"] or "Esperando turno…")}</pre>'
-                  + (f'<p><a class="btn sec" href="{r}">Ver el panorama actualizado</a></p>' if s["estado"] == "terminada" else ""))
+                  + (f'<p class="fila" style="justify-content:flex-start;gap:8px"><span class="mut">Resultados actualizados:</span>'
+                     f'<a class="btn sec" href="{r}">Panorama</a><a class="btn sec" href="{r}equipos">Equipos</a>'
+                     f'<a class="btn sec" href="{r}agil">Ágil</a><a class="btn sec" href="{r}calidad">Sonar</a></p>'
+                     if s["estado"] == "terminada" else ""))
         return responder(f"Solicitud #{sid}", cuerpo, "revisiones", refrescar=5 if activa else 0)
 
     @app.post("/revisiones/<int:sid>/cancelar")
@@ -624,8 +634,11 @@ def crear_app() -> Flask:
 
         tipo = request.args.get("tipo", "")
         orden = request.args.get("orden", "fecha")
+        abrir = request.args.get("abrir", "")
+        fila = q("SELECT repo FROM fis.agil_resumen WHERE equipo = %s", eq)
         cuerpo = paginas_agil.equipo(q, raiz(), eq, tipo if tipo in ("planning", "daily", "review", "retro") else "",
-                                     orden if orden in ("fecha", "ia", "calidad") else "fecha")
+                                     orden if orden in ("fecha", "ia", "calidad") else "fecha",
+                                     int(abrir) if abrir.isdigit() else None, acciones_equipo(fila[0]["repo"] if fila else ""))
         if cuerpo is None:
             abort(404)
         return responder(f"Ágil · {eq}", cuerpo, "agil")
@@ -638,12 +651,10 @@ def crear_app() -> Flask:
             cuerpo = _hero("Calidad del código", "Sonar interno") + ('<div class="aviso">El SonarQube del curso aún no está configurado. '
                                                                      'Ejecute <code>sh deploy/instalar.sh</code> en el servidor.</div>')
             return responder("Sonar", cuerpo, "calidad")
-        filas = q("SELECT equipo, clave, quality_gate, commit, entrega, actualizado, error FROM fis.sonar_interno ORDER BY equipo")
-        pestanas = " ".join(f'<a class="btn sec peq" href="{r}equipos/{E(x["equipo"])}">{E(x["equipo"])}</a>' for x in filas)
-        cuerpo = (_hero("Revisión interna del profesor", "Sonar interno",
-                        "SonarQube del curso: el agente analiza cada equipo en el commit de la fecha de corte con el mismo perfil de calidad. "
-                        "Sin compilar ni ejecutar pruebas (no mide cobertura; las reglas de Java que requieren bytecode no aplican).")
-                  + (f'<div class="fila" style="justify-content:flex-start;gap:8px;margin-bottom:12px">{pestanas}</div>' if filas else "")
+        cuerpo = (_hero("Calidad del código", "Sonar",
+                        "Primero la comparación entre equipos; abajo, el SonarQube del curso completo para explorar cada problema.")
+                  + sitio.calidad(datos(), r)
+                  + "<h2>SonarQube del curso</h2>"
                   + f'<iframe class="tablero" src="{r}sonar/projects" title="SonarQube del curso" loading="lazy"></iframe>')
         return responder("Sonar", cuerpo, "calidad")
 

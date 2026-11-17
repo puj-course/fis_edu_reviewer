@@ -62,3 +62,32 @@ def test_daily_asignado_al_sprint_cuenta_aunque_el_tablero_este_corrido():
                      issue(6, "Daily 08/09/2026", "2026-09-08T14:00:00Z", "Ayer X. Hoy Y. Sin impedimentos.")]}
     s1, s2 = agil.analizar(ev, {})["sprints"]
     assert s1["dailies"] == 2 and s2["dailies"] == 0
+
+
+def test_paginas_agil_con_barra_de_equipo_y_registro_abierto():
+    from reviewer import paginas_agil
+
+    resumen = {"repo": "org/FIS_G1", "equipo": "FIS_G1", "hasta": dt.date(2026, 9, 20), "cumplimiento": 0.8, "planning": 1, "dailies": 0.5,
+               "review": 1, "retro": 0.5, "continuidad": 1, "calidad_media": 80, "sin_contenido": 1, "ia_estilo_media": 0.1,
+               "ia_llm_media": 0.4, "ia_llm_altos": 2, "sprint_activo": False, "huecos": "", "fuente_sprints": "tablero", "dailies_por_semana": 3}
+    sprint = {"equipo": "FIS_G1", "titulo": "Sprint 1", "inicio": dt.date(2026, 9, 1), "fin": dt.date(2026, 9, 7), "items": 3, "hechos": 2,
+              "estimacion": 5, "planning": "7", "review": "", "retro": "8", "dailies": 1, "dailies_esperados": 3, "en_curso": False}
+    reg = {"numero": 7, "tipo": "planning", "titulo": "Planning 1", "fecha": dt.date(2026, 9, 1), "fechas": "2026-09-01", "autor": "ana",
+           "participantes": "ana", "sprint": "Sprint 1", "estado": "closed", "texto": "Objetivo", "comentarios": [], "calidad": 60,
+           "faltan": "", "ia_estilo": 0.0, "ia_rasgos": "", "ia_llm": 0.9, "ia_razones": "genérico", "url": "https://github.com/x"}
+
+    def q(sql, *args):
+        if "count(*) FILTER" in sql:
+            return [{"equipo": "FIS_G1", "planning": 0, "review": 1, "retro": 0}]
+        if "SELECT equipo FROM fis.agil_resumen" in sql:
+            return [{"equipo": "FIS_G1"}, {"equipo": "FIS_G2"}]
+        if "agil_resumen" in sql:
+            return [resumen]
+        if "agil_sprints" in sql:
+            return [sprint]
+        return [reg]
+
+    tabla = paginas_agil.resumen(q, "")
+    assert "sin sprint en curso" in tabla and "1 sin review" in tabla and "2 con IA" in tabla
+    pagina = paginas_agil.equipo(q, "../", "FIS_G1", abrir=7, acciones="<form>")
+    assert 'id="r7" open' in pagina and 'href="../agil/FIS_G2"' in pagina and "?abrir=7#r7" in pagina and "<form>" in pagina
