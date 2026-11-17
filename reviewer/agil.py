@@ -205,7 +205,9 @@ def analizar(ev: dict, cfg: dict) -> dict:
         tipos = defaultdict(list)
         for r in propios:
             tipos[r["tipo"]].append(r)
-        dias_daily = sorted({f for r in tipos["daily"] for f in r["fechas"] if s["inicio"] <= f <= s["fin"]})
+        # Si el equipo asignó el daily a este sprint cuenta aunque las fechas del tablero estén corridas.
+        dias_daily = sorted({f for r in tipos["daily"] for f in r["fechas"]
+                             if r["sprint"] == s["titulo"] or s["inicio"] <= f <= s["fin"]})
         semanas = max(1, ((fin - ini).days + 1) / 7) if fin >= ini else 1
         esperados = max(1, round(dailies_semana * semanas))
         filas.append({**s, **estado_items.get(s["titulo"], {"items": 0, "hechos": 0, "estimacion": 0.0}),

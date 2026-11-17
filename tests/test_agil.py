@@ -51,3 +51,14 @@ def test_analisis_por_sprint_y_continuidad():
     assert s2["planning"] == [] and s2["en_curso"] is True
     assert a["componentes"]["continuidad"] == 1.0 and a["sprint_activo"] is True
     assert all(r["calidad"] > 0 for r in a["registros"])
+
+
+def test_daily_asignado_al_sprint_cuenta_aunque_el_tablero_este_corrido():
+    ev = {"repo": "org/G1", "hasta": "2026-09-20", "limite_utc": "2026-09-21T04:59:59Z",
+          "proyecto": {"items": {"5": {"Sprint": "Sprint 1"}, "6": {"Sprint": "Sprint 1"}},
+                       "sprints": [{"campo": "Sprint", "titulo": "Sprint 1", "inicio": "2026-09-01", "dias": 6},
+                                   {"campo": "Sprint", "titulo": "Sprint 2", "inicio": "2026-09-07", "dias": 6}]},
+          "issues": [issue(5, "Daily 07/09/2026", "2026-09-07T14:00:00Z", "Ayer X. Hoy Y. Sin impedimentos."),
+                     issue(6, "Daily 08/09/2026", "2026-09-08T14:00:00Z", "Ayer X. Hoy Y. Sin impedimentos.")]}
+    s1, s2 = agil.analizar(ev, {})["sprints"]
+    assert s1["dailies"] == 2 and s2["dailies"] == 0
