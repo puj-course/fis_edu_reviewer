@@ -57,7 +57,8 @@ def verificar_clave(clave: str, guardado: str) -> bool:
         return False
 
 
-def leer_usuarios(ruta: str = RUTA_USUARIOS) -> dict[str, str]:
+def leer_usuarios(ruta: str | None = None) -> dict[str, str]:
+    ruta = ruta or RUTA_USUARIOS
     usuarios = {}
     try:
         with open(ruta, encoding="utf-8") as f:
@@ -70,8 +71,9 @@ def leer_usuarios(ruta: str = RUTA_USUARIOS) -> dict[str, str]:
     return usuarios
 
 
-def guardar_usuario(usuario: str, clave: str | None, ruta: str = RUTA_USUARIOS) -> None:
+def guardar_usuario(usuario: str, clave: str | None, ruta: str | None = None) -> None:
     """Agrega o cambia (clave) o elimina (clave=None) un usuario del archivo."""
+    ruta = ruta or RUTA_USUARIOS
     if not usuario or ":" in usuario or any(c.isspace() for c in usuario):
         raise ValueError("Usuario inválido: sin espacios ni dos puntos.")
     usuarios = leer_usuarios(ruta)
