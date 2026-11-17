@@ -59,6 +59,7 @@ def collect(gh: GitHub, repo: str, hasta: str, con_wiki: bool = True) -> dict:
         _tamano_commits(gh, repo, ramas_commits, commits, avisos)
 
     issues, prs = _issues_y_prs(gh, repo, limite)
+    _comentarios_ceremonias(gh, repo, issues, limite)
     if gh.token:
         _reviews(gh, repo, prs)
 
@@ -153,6 +154,19 @@ def _tamano_commits(gh, repo, ramas, commits, avisos):
 
 
 # ---------------------------------------------------------------- issues / PRs
+
+def _comentarios_ceremonias(gh, repo, issues, limite) -> None:
+    """Comentarios completos de las issues de ceremonias (dailies, planning, review, retro)."""
+    from .agil import tipo_ceremonia
+
+    for i in issues:
+        if not tipo_ceremonia(i):
+            continue
+        i["comentarios"] = [
+            {"autor": (c.get("user") or {}).get("login"), "fecha": c["created_at"], "cuerpo": (c.get("body") or "")[:4000]}
+            for c in gh.paginate(f"/repos/{repo}/issues/{i['numero']}/comments", max_items=300, opcional=True)
+            if c["created_at"] <= limite]
+
 
 def _issues_y_prs(gh, repo, limite):
     issues, prs_idx = [], {}
@@ -337,6 +351,10 @@ query($owner:String!, $name:String!, $cursor:String) {
   repository(owner:$owner, name:$name) {
     projectsV2(first:3) { nodes {
       title
+      fields(first:30) { nodes {
+        ... on ProjectV2IterationField { name configuration {
+          iterations { title startDate duration } completedIterations { title startDate duration } } }
+      } }
       items(first:100, after:$cursor) {
         pageInfo { hasNextPage endCursor }
         nodes {
@@ -358,7 +376,7 @@ query($owner:String!, $name:String!, $cursor:String) {
 def _proyecto(gh, repo, avisos):
     owner, name = repo.split("/")
     items: dict[int, dict] = {}
-    titulo, cursor = None, None
+    titulo, cursor, sprints = None, None, []
     for _ in range(40):
         data, errores = gh.graphql(_Q_PROY, {"owner": owner, "name": name, "cursor": cursor})
         try:
@@ -378,6 +396,11 @@ def _proyecto(gh, repo, avisos):
             return None
         proyecto = visibles[0]  # el primer tablero enlazado al repo
         titulo = proyecto["title"]
+        if not sprints:  # fechas reales de cada sprint (campo de iteración del tablero)
+            for campo in (proyecto.get("fields") or {}).get("nodes") or []:
+                conf = (campo or {}).get("configuration") or {}
+                for it in (conf.get("completedIterations") or []) + (conf.get("iterations") or []):
+                    sprints.append({"campo": campo["name"], "titulo": it["title"], "inicio": it["startDate"], "dias": it["duration"]})
         for it in proyecto["items"]["nodes"]:
             contenido = it.get("content") or {}
             if not contenido.get("number") or contenido.get("repository", {}).get("nameWithOwner", "").lower() != repo.lower():
@@ -395,7 +418,8 @@ def _proyecto(gh, repo, avisos):
         if not pagina["hasNextPage"]:
             break
         cursor = pagina["endCursor"]
-    return {"titulo": titulo, "items": {str(k): v for k, v in items.items()}}
+    return {"titulo": titulo, "items": {str(k): v for k, v in items.items()},
+            "sprints": sorted(sprints, key=lambda s: s["inicio"])}
 
 
 # ---------------------------------------------------------------- Sonar (SonarCloud o SonarQube propio)

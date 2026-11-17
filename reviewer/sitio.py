@@ -102,7 +102,7 @@ footer{color:var(--mut);font-size:12px;text-align:center;padding:24px 16px;borde
 @media (max-width:600px){.hero h1{font-size:23px}.marca .c{font-size:16px}.kpi .v{font-size:24px}}
 """
 
-NAV = [("", "Panorama"), ("revisiones", "Revisiones"), ("rubricas", "Rúbricas"), ("tableros", "Tableros"), ("calidad", "Sonar"),
+NAV = [("", "Panorama"), ("revisiones", "Revisiones"), ("agil", "Ágil"), ("rubricas", "Rúbricas"), ("tableros", "Tableros"), ("calidad", "Sonar"),
        ("estudiantes", "Estudiantes"), ("ia", "Uso de IA"), ("agente", "El agente")]
 
 

@@ -82,6 +82,9 @@ def revisar_repo(gh: GitHub, llm: DeepSeek, cfg: dict, repo: str, entrega: str, 
             try:
                 qualitative.evaluar_criterios(llm, ev, res)
                 qualitative.preguntas_sustentacion(llm, gh, ev, res, cfg)
+                from . import agil
+
+                agil.juzgar_con_ia(llm, res["agil"], qualitative._anonimizador(ev, res), os.environ.get("FIS_PG_DSN"))
             except RuntimeError as e:
                 res["avisos"].append(f"La capa de IA falló y se omitió: {e}")
         else:

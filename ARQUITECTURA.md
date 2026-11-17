@@ -132,6 +132,27 @@ cobertura y las reglas de Java que requieren bytecode no aplican. `deploy/sonar_
 contraseña inicial del administrador, genera el token del agente y deja la lectura sin segunda
 cuenta, porque a SonarQube solo se llega con sesión del portal.
 
+## Metodología ágil: sprints y ceremonias (`reviewer/agil.py`)
+
+Los equipos registran sus ceremonias como issues («Sprint Planning 2», «Daily 19/08», «Retrospectiva 1»…); un
+daily puede ser un issue por día o un comentario dentro de un issue del sprint. El agente:
+
+1. lee las **fechas reales de cada sprint** del campo de iteración del tablero (Projects) y, si no existe,
+   las deduce de las ceremonias;
+2. descarga el texto completo y **los comentarios** de cada issue de ceremonia;
+3. calcula por sprint si hubo planning, cuántos dailies hubo frente a los esperados
+   (`agil.dailies_por_semana` en la configuración, 3 por defecto), review y retrospectiva, y si **siempre
+   hubo un sprint en curso** (días hábiles sin sprint);
+4. mide la **calidad** de cada registro: el daily dice qué se hizo, qué se hará e impedimentos; el planning
+   trae objetivo, historias, estimación y responsables; la review, incremento, historias terminadas y
+   retroalimentación; la retro, qué salió bien, qué mejorar y acciones;
+5. marca **indicios de texto generado con IA**: rasgos de estilo (rayas largas, muletillas, vocabulario
+   genérico, emojis como viñetas, negritas en cada viñeta) y, con la capa de IA, el juicio de DeepSeek con
+   alias en lugar de nombres. El juicio se guarda por texto en `fis.ia_textos` para no repetir llamadas.
+
+La verificación «Ceremonias ágiles» de la rúbrica usa este análisis (cumplimiento y calidad). Todo queda en
+`fis.agil_resumen`, `fis.agil_sprints` y `fis.agil_registros`, y se ve en la pestaña **Ágil** del portal.
+
 ## Portal del profesor (aplicación web sobre PostgreSQL)
 
 `reviewer/portal.py` es una aplicación Flask (gunicorn) que arma cada página en el momento con los

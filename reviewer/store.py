@@ -119,6 +119,22 @@ CREATE TABLE IF NOT EXISTS fis.sonar_interno (
     actualizado timestamptz DEFAULT now(), commit text, entrega text, error text
 );
 
+CREATE TABLE IF NOT EXISTS fis.agil_resumen (
+    repo text PRIMARY KEY, equipo text NOT NULL, entrega text, hasta date, cumplimiento numeric, planning numeric,
+    dailies numeric, review numeric, retro numeric, continuidad numeric, calidad_media int, sin_contenido int,
+    ia_estilo_media numeric, ia_llm_media numeric, ia_llm_altos int, sprint_activo boolean, huecos text,
+    fuente_sprints text, dailies_por_semana int, actualizado timestamptz DEFAULT now()
+);
+CREATE TABLE IF NOT EXISTS fis.agil_sprints (
+    repo text NOT NULL, equipo text NOT NULL, orden int, titulo text, inicio date, fin date, items int, hechos int,
+    estimacion numeric, planning text, review text, retro text, dailies int, dailies_esperados int, en_curso boolean
+);
+CREATE TABLE IF NOT EXISTS fis.agil_registros (
+    repo text NOT NULL, equipo text NOT NULL, numero int, tipo text, titulo text, fecha date, fechas text, autor text,
+    participantes text, sprint text, estado text, texto text, comentarios jsonb, calidad int, faltan text,
+    ia_estilo numeric, ia_rasgos text, ia_llm numeric, ia_razones text, url text
+);
+
 -- Vistas para los tableros: siempre la revisión más reciente de cada equipo y entrega.
 CREATE OR REPLACE VIEW fis.v_revision_actual AS
     SELECT DISTINCT ON (repo, entrega) * FROM fis.revisiones ORDER BY repo, entrega, id DESC;
@@ -239,6 +255,7 @@ class Almacen:
                 [(rid, login, n, p) for login, ps in res["preguntas_sustentacion"].items() for n, p in enumerate(ps, 1)],
             )
             self._hechos(cur, ev, cfg, repo, equipo)
+            self._agil(cur, res, repo, equipo)
 
     @staticmethod
     def _sonar(cur, s: dict | None, repo: str, equipo: str, tabla: str = "fis.sonar", extra: tuple = ()) -> None:
@@ -262,6 +279,34 @@ class Almacen:
              num("security_hotspots", int), num("duplicated_lines_density"), num("sqale_index", int),
              letra("sqale_rating"), letra("reliability_rating"), letra("security_rating"), num("ncloc", int))
         cur.execute(f"INSERT INTO {tabla} ({columnas}) VALUES ({', '.join(['%s'] * (len(valores) + len(extra)))})", valores + extra)
+
+    @staticmethod
+    def _agil(cur, res: dict, repo: str, equipo: str) -> None:
+        import json as _json
+
+        a = res.get("agil")
+        if not a:
+            return
+        for tabla in ("agil_resumen", "agil_sprints", "agil_registros"):
+            cur.execute(f"DELETE FROM fis.{tabla} WHERE repo = %s", (repo,))
+        c = a["componentes"]
+        cur.execute(
+            "INSERT INTO fis.agil_resumen VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s)",
+            (repo, equipo, res["entrega"], res["hasta"], a["cumplimiento"], c["planning"], c["dailies"], c["review"], c["retro"],
+             c["continuidad"], a["calidad_media"], a["sin_contenido"], a["ia_estilo_media"], a.get("ia_llm_media"),
+             a.get("ia_llm_altos"), a["sprint_activo"], "; ".join(f"{x} a {y}" for x, y in a["huecos"]) or None,
+             a["fuente_sprints"], a["dailies_por_semana"]))
+        cur.executemany(
+            "INSERT INTO fis.agil_sprints VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s)",
+            [(repo, equipo, n, s["titulo"], s["inicio"], s["fin"], s["items"], s["hechos"], s["estimacion"],
+              ",".join(map(str, s["planning"])), ",".join(map(str, s["review"])), ",".join(map(str, s["retro"])),
+              s["dailies"], s["dailies_esperados"], s["en_curso"]) for n, s in enumerate(a["sprints"], 1)])
+        cur.executemany(
+            "INSERT INTO fis.agil_registros VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s)",
+            [(repo, equipo, r["numero"], r["tipo"], r["titulo"], r["fecha"], ",".join(r["fechas"]), r["autor"],
+              ",".join(r["participantes"]), r["sprint"], r["estado"], r["texto"], _json.dumps(r["comentarios"], ensure_ascii=False),
+              r["calidad"], "; ".join(r["faltan"]) or None, r["ia_estilo"], "; ".join(r["ia_rasgos"]) or None, r["ia_llm"],
+              r["ia_razones"], r["url"]) for r in a["registros"]])
 
     def _hechos(self, cur, ev: dict, cfg: dict, repo: str, equipo: str) -> None:
         c = Contexto(ev, cfg)

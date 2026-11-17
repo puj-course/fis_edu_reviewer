@@ -70,6 +70,13 @@ def nivel_por_umbral(valor: float, umbrales: list[tuple[float, str]]) -> str:
 class Contexto:
     """Vistas derivadas de la evidencia que comparten varias verificaciones."""
 
+    def agil(self) -> dict:
+        if not hasattr(self, "_agil"):
+            from .agil import analizar
+
+            self._agil = analizar(self.ev, self.cfg)
+        return self._agil
+
     def __init__(self, ev: dict, cfg: dict):
         self.ev, self.cfg = ev, cfg
         self.ignorar = {u.lower() for u in cfg.get("ignorar_usuarios", [])}
@@ -280,23 +287,35 @@ def historias_estructura(c: Contexto):
                 nivel=nivel_por_umbral(r, [(0.8, "Excelente"), (0.6, "Bueno"), (0.5, "Regular")]), textos=textos)
 
 
+NOMBRE_CER = {"planning": "Sprint Planning", "daily": "Daily", "review": "Sprint Review", "retro": "Retrospectiva"}
+
+
 def ceremonias(c: Contexto):
-    fuentes = {f"issue #{i['numero']}": i["titulo"] for i in c.ev["issues"]}
-    fuentes.update({k: k + "\n" + v[:3000] for k, v in c.docs_md.items()})
-    fuentes.update({p: p for p in c.paths})
-    tipos = {
-        "Sprint Planning": r"sprint.?planning|planning|planeacion del sprint|planificacion del sprint",
-        "Dailies": r"\bdaily\b|\bdailies\b|reunion diaria",
-        "Retrospectiva": r"retrospectiv|\bretro\b",
-        "Sprint Review": r"sprint.?review|revision del sprint",
-    }
-    inds, hallados, textos = [], 0, []
-    for nombre, patron in tipos.items():
-        donde = [k for k, v in fuentes.items() if re.search(patron, norm(v))]
-        hallados += bool(donde)
-        inds.append(ind(f"{nombre}: " + (f"evidencia en {', '.join(donde[:3])}" if donde else "sin evidencia escrita"), bool(donde)))
-        textos += [(k, c.docs_md[k][:2500]) for k in donde[:2] if k in c.docs_md]
-    return _res("ceremonias", "Ceremonias ágiles", inds, razon=min(1.0, hallados / 3), textos=textos[:6])
+    """Sprints y ceremonias: continuidad, planning, dailies, review y retro por sprint, y calidad de cada registro."""
+    a = c.agil()
+    if not a["registros"] and not a["sprints"]:
+        return _res("ceremonias", "Ceremonias ágiles",
+                    [ind("No hay sprints en el tablero ni issues de ceremonias (planning, daily, review, retrospectiva)", False)], razon=0.0)
+    comp = a["componentes"]
+    pct_ = lambda v: f"{v * 100:.0f}%"
+    huecos = a["huecos"]
+    inds = [
+        ind(f"{len(a['sprints'])} sprints (según {a['fuente_sprints']}); sprint en curso a la fecha de corte: "
+            f"{'sí' if a['sprint_activo'] else 'no'}", a["sprint_activo"]),
+        ind("Siempre hubo un sprint en curso" if not huecos else
+            "Días hábiles sin sprint: " + ", ".join(f"{x} a {y}" for x, y in huecos[:4]), not huecos),
+        ind(f"Sprint Planning registrado en {pct_(comp['planning'])} de los sprints", comp["planning"] >= 0.8),
+        ind(f"Dailies: {pct_(comp['dailies'])} de los esperados ({a['dailies_por_semana']} por semana)", comp["dailies"] >= 0.7),
+        ind(f"Sprint Review registrada en {pct_(comp['review'])} de los sprints", comp["review"] >= 0.8),
+        ind(f"Retrospectiva registrada en {pct_(comp['retro'])} de los sprints", comp["retro"] >= 0.8),
+        ind(f"Calidad media de los registros: {a['calidad_media']}/100 ({a['sin_contenido']} sin contenido escrito)", a["calidad_media"] >= 60),
+    ]
+    salto = "\n"
+    textos = [(f"{NOMBRE_CER[r['tipo']]} #{r['numero']} ({r['fecha']})",
+               salto.join([r["texto"]] + [x["cuerpo"] for x in r["comentarios"]])[:1500])
+              for r in [x for x in a["registros"] if x["tipo"] in ("retro", "planning", "review") and x["calidad"] > 0][-6:]]
+    return _res("ceremonias", "Ceremonias ágiles", inds, razon=round(0.75 * a["cumplimiento"] + 0.25 * a["calidad_media"] / 100, 2),
+                textos=textos)
 
 
 def hitos(c: Contexto):
@@ -917,7 +936,7 @@ def evaluar(rubrica: dict, ev: dict, cfg: dict) -> dict:
     return {
         "repo": ev["repo"], "entrega": rubrica["entrega"], "entrega_nombre": rubrica["nombre"], "hasta": ev["hasta"],
         "criterios": criterios, "aporte": aporte_individual(c), "senales": senales(c), "uso_ia": evidencias_ia(c),
-        "avisos": ev.get("avisos", []), "preguntas_sustentacion": {},
+        "avisos": ev.get("avisos", []), "preguntas_sustentacion": {}, "agil": c.agil(),
     }
 
 

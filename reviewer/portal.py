@@ -396,7 +396,8 @@ def crear_app() -> Flask:
         acciones = (f'<form method="post" action="{r}revisiones" class="enlinea">{campo_csrf()}'
                     f'<input type="hidden" name="alcance" value="{E(d.repo_de.get(eq, ""))}"><input type="hidden" name="entrega" value="auto">'
                     f'<input type="hidden" name="con_ia" value="1"><input type="hidden" name="sonar_interno" value="{1 if sonar_configurado() else 0}">'
-                    f'<button class="btn">Revisar este equipo ahora</button></form>') if eq in d.repo_de else ""
+                    f'<button class="btn">Revisar este equipo ahora</button></form>'
+                    f' <a class="btn sec" href="{r}agil/{E(eq)}">Metodología ágil</a>') if eq in d.repo_de else ""
         cuerpo = sitio.equipo(d, r, eq, acciones)
         if cuerpo is None:
             abort(404)
@@ -609,6 +610,25 @@ def crear_app() -> Flask:
                   + f'<div class="fila" style="justify-content:flex-start;margin-bottom:12px;gap:8px">{pestanas}</div>'
                   + f'<iframe class="tablero" src="{E(src)}" title="{E(actual["nombre"])}" loading="lazy"></iframe>')
         return responder("Tableros", cuerpo, "tableros")
+
+    # ------------------------------------------------------------ metodología ágil
+    @app.get("/agil")
+    def agil_resumen():
+        from . import paginas_agil
+
+        return responder("Ágil", paginas_agil.resumen(q, raiz()), "agil")
+
+    @app.get("/agil/<eq>")
+    def agil_equipo(eq):
+        from . import paginas_agil
+
+        tipo = request.args.get("tipo", "")
+        orden = request.args.get("orden", "fecha")
+        cuerpo = paginas_agil.equipo(q, raiz(), eq, tipo if tipo in ("planning", "daily", "review", "retro") else "",
+                                     orden if orden in ("fecha", "ia", "calidad") else "fecha")
+        if cuerpo is None:
+            abort(404)
+        return responder(f"Ágil · {eq}", cuerpo, "agil")
 
     # ------------------------------------------------------------ SonarQube del curso
     @app.get("/calidad")

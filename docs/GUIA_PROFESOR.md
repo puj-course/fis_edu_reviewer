@@ -22,6 +22,7 @@ cierra la sesión. Todo lo que se ve sale en el momento de la base de datos.
 | Ver si un equipo ya actualizó y revisarlo ya | **Revisiones**: último push frente a última revisión, botón «Revisar»; o en el equipo, «Revisar este equipo ahora» |
 | Seguir una revisión | **Revisiones → #n**: estado, duración y registro en vivo; se puede cancelar |
 | Ver con qué se evalúa cada entrega | **Rúbricas**: criterios, pesos, niveles y qué verifica el agente; los administradores las editan |
+| Revisar sprints y ceremonias (planning, dailies, review, retro) | **Ágil**: cumplimiento por equipo; en cada equipo, sprints, semana a semana y cada registro con su texto completo, comentarios, calidad e indicios de IA (filtros por tipo, «más sospechosos de IA», «menor calidad») |
 | Ver los tableros de Metabase | **Tableros** (incrustados, con filtros por equipo y entrega) |
 | Revisar la calidad del código con las mismas reglas para todos | **Sonar** (SonarQube del curso incrustado). Pida la revisión con «Sonar interno»: analiza el commit de la fecha de corte, aunque el equipo no tenga Sonar |
 | Cambiar fechas de corte, equipos o la revisión programada | **Administración** |
@@ -88,3 +89,15 @@ lectura, así que no se pueden dañar los datos desde ahí.
 3. En el servidor: `git pull && sh deploy/instalar.sh`.
 4. Para la nueva cohorte, decidir si se activan la retroalimentación semanal a los equipos
    (`--publicar`) y las plantillas de `plantilla-equipo/` en `Repository_Template_FIS`.
+
+## Cómo leer la pestaña Ágil
+
+- **Cumplimiento** combina, por sprint cerrado, si hubo planning, la proporción de dailies frente a los
+  esperados, review y retrospectiva, y la continuidad (que siempre haya un sprint en curso).
+- **Calidad** de cada registro (0 a 100): si dice lo que la ceremonia exige. Un daily sin impedimentos ni
+  plan, o una retro sin acciones, baja la calidad aunque exista.
+- **IA** es un indicio para la sustentación, nunca una prueba. *Estilo* cuenta rasgos típicos de asistentes;
+  *IA* es el juicio de DeepSeek con sus razones. Un registro largo, perfecto y genérico, igual en todos los
+  sprints, merece una pregunta: «¿qué decidieron concretamente en esa retrospectiva?».
+- Para exigir otra frecuencia de dailies, cambie `agil: {dailies_por_semana: N}` en
+  **Administración → Configuración avanzada**.
