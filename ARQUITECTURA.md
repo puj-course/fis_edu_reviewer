@@ -111,26 +111,48 @@ no aparece, `<org>_<repo>` y `<repo>`) y consulta, en SonarCloud y en el SonarQu
   si Sonar corre de forma continua o solo se ejecutó una vez antes de la entrega;
 - qué pipelines del repo ejecutan Sonar y si su última ejecución fue exitosa.
 
-El resultado queda en `fis.sonar` (una fila por repo) y en el sitio: tabla en el Panorama y en cada equipo.
+El resultado queda en `fis.sonar` (una fila por repo) y en el portal: tabla en el Panorama y en cada equipo.
 
-## Sitio web del profesor (puerto 8090, con inicio de sesión)
+## Portal del profesor (aplicación web sobre PostgreSQL)
 
-El revisor regenera después de cada corrida unas páginas estáticas (`reviewer/sitio.py`) con la
-identidad de la Universidad Javeriana y de FIS (`reviewer/marca.py`). Las sirve nginx, que en cada
-petición consulta al servicio `acceso` (`reviewer/acceso.py`, `auth_request`): sin sesión válida
-responde con la página de ingreso en la misma URL; al ingresar, `acceso` entrega una cookie firmada
-con HMAC (HttpOnly, SameSite=Lax, Secure detrás de HTTPS) y la página se recarga. Hay un usuario
-principal (`deploy/.env`) y cuentas para colegas (`python -m reviewer usuario agregar`). Todos los
-enlaces son relativos, así que el sitio funciona detrás de un proxy reverso en cualquier ruta.
+`reviewer/portal.py` es una aplicación Flask (gunicorn) que arma cada página en el momento con los
+datos vivos de la base (`reviewer/sitio.py` dibuja las páginas, `reviewer/marca.py` tiene la
+identidad Javeriana/FIS). nginx (`deploy/nginx.conf`) es la única entrada: reenvía al portal y
+publica Metabase en `/metabase/` solo para quien tiene sesión en el portal.
 
-- **Panorama**: indicadores del curso, pre-nota por equipo, evolución de la pre-nota, mapa de
-  criterios (equipo × criterio), tarjeta por equipo y hallazgos principales de la última entrega.
-- **El agente**: qué hace, cómo trabaja, qué revisa y las rúbricas de cada entrega (para presentarlo
-  a colegas).
-- **Uso de IA**: resultado por estudiante y por equipo, con enlaces a los commits en GitHub.
-- **Equipo**: integrantes, commits por semana, uso de IA, señales y criterios de cada entrega.
-- **Estudiante** (récord individual): commits, semanas activas, issues, PRs, revisiones y factor
-  sugerido por entrega y por día de revisión; uso de IA; señales; preguntas de sustentación; últimos commits.
+```
+navegador ─▶ nginx «sitio» ─┬─▶ portal (Flask) ──▶ PostgreSQL: fis.* (revisiones) y portal.* (usuarios, config, cola)
+                            └─▶ /metabase/ (auth_request al portal) ─▶ Metabase (tableros incrustados)
+revisor (trabajador) ◀── portal.solicitudes ── el profesor pide una revisión desde el portal
+```
+
+Todo queda en el esquema `portal` (Metabase no lo ve: su usuario de lectura solo tiene el esquema `fis`):
+
+| Tabla | Qué guarda |
+|---|---|
+| `portal.usuarios` | cuentas (PBKDF2), rol `admin` o `colega`, activo, último ingreso |
+| `portal.auditoria` | ingresos, ingresos fallidos, salidas, solicitudes de revisión, cambios de configuración y de usuarios |
+| `portal.config` / `portal.config_historial` | configuración del curso y rúbricas vigentes, y cada versión anterior con autor y fecha |
+| `portal.solicitudes` | cada revisión pedida (o programada): alcance, rúbrica, IA, estado, duración y registro completo |
+
+Páginas: **Panorama**, **Revisiones** (pedir una revisión de todos o de un equipo, estado de cada
+repo frente a su último push en GitHub, historial y registro en vivo, cancelar), **Rúbricas** (las
+de cada entrega con criterios, pesos, niveles y qué verifica el agente; los administradores las
+editan), **Tableros** (Metabase incrustado con *static embedding* firmado), **Estudiantes**,
+**Uso de IA**, **El agente**, **Administración** (curso, fechas de corte, equipos incluidos, cuentas que
+no son estudiantes, revisión programada, usuarios y auditoría) y **Mi cuenta**.
+
+La sesión es una cookie firmada (HttpOnly, SameSite=Lax, Secure detrás de HTTPS) que se valida contra
+la base en cada petición: desactivar un usuario o cambiarle la contraseña cierra sus sesiones.
+Los formularios llevan token CSRF; tras 5 intentos fallidos en 5 minutos la cuenta espera.
+
+### Revisiones bajo demanda (`reviewer/trabajador.py`)
+
+El contenedor `revisor` es un trabajador que toma las solicitudes de `portal.solicitudes` en orden,
+ejecuta `revisar` o `revisar-todos` y guarda la salida en la base cada 2 segundos (el portal la
+muestra en vivo). Revisa la marca de cancelación con la misma frecuencia. Si la revisión programada
+está activa, encola una revisión de todos los equipos cada `intervalo_horas`. Una solicitud que
+quedó a medias por un reinicio se marca como interrumpida.
 
 ## Cómo se verifica el uso de IA (`checks.evidencias_ia` y `reviewer/ia.py`)
 
@@ -146,7 +168,7 @@ enlaces son relativos, así que el sitio funciona detrás de un proxy reverso en
 
 ## Modo de esta cohorte: solo evaluar
 
-El despliegue del servidor **solo lee** de GitHub: `deploy/ciclo.sh` no publica comentarios ni
+El despliegue del servidor **solo lee** de GitHub: el trabajador no publica comentarios ni
 crea issues en los repos de los equipos, y nada de `plantilla-equipo/` se ha copiado a
 `Repository_Template_FIS`. Lo único que el agente escribió en GitHub fue una issue de prueba en
 este mismo repositorio (`fis_edu_reviewer#1`).
@@ -163,9 +185,9 @@ Para la próxima cohorte quedan listos, sin activar:
 - Contraseñas aleatorias generadas por `deploy/instalar.sh` en `deploy/.env` (permiso 600,
   ignorado por git). El token de GitHub y la clave de DeepSeek viven solo ahí.
 - PostgreSQL, MongoDB y (en instalaciones nuevas) Metabase escuchan solo en `127.0.0.1` del servidor;
-  únicamente el sitio se publica, pensado para quedar detrás de un proxy reverso HTTPS.
-- El sitio exige sesión en todas las páginas; las contraseñas de colegas se guardan con PBKDF2 y hay
-  límite de intentos por usuario y por dirección.
+  únicamente nginx se publica, pensado para quedar detrás de un proxy reverso HTTPS.
+- El portal exige sesión en todas las páginas y en `/metabase/`; contraseñas con PBKDF2, CSRF en los
+  formularios, límite de intentos por usuario y por dirección, y auditoría de cada acción.
 - Las pre-notas no se imprimen en los registros ni se suben a este repositorio, que es público.
 - A DeepSeek se le envían alias en lugar de usuarios, nombres y correos de los estudiantes.
 - El contenido de los repos se trata como dato: si alguien escribe instrucciones dirigidas al
@@ -177,8 +199,8 @@ Para la próxima cohorte quedan listos, sin activar:
 |---|---|
 | Instalar o actualizar | `sh deploy/instalar.sh` |
 | Ver estado y conteos | `sh deploy/estado.sh` |
-| Regenerar el sitio | `docker compose -f deploy/docker-compose.yml exec revisor python -m reviewer sitio --salida /datos/sitio` |
-| Forzar una revisión ahora | `docker compose -f deploy/docker-compose.yml restart revisor` |
+| Pedir una revisión | Portal → **Revisiones** (o un equipo → «Revisar este equipo ahora») |
+| Crear un usuario | Portal → **Administración** (o `docker compose -f deploy/docker-compose.yml exec revisor python -m reviewer usuario agregar <usuario> [--admin]`) |
 | Revisar las tres entregas | `docker compose -f deploy/docker-compose.yml exec revisor python -m reviewer revisar-todos --entrega todas --ia --salida /datos/manual` |
 | Ver registros | `docker compose -f deploy/docker-compose.yml logs -f revisor` |
 | Respaldar PostgreSQL | `docker compose -f deploy/docker-compose.yml exec postgres pg_dump -U fis fis > fis.sql` |

@@ -61,8 +61,8 @@ sh deploy/instalar.sh
 
 El instalador:
 
-1. Genera `deploy/.env` con contraseñas aleatorias para PostgreSQL, MongoDB, Metabase y el sitio.
-2. Construye y levanta los contenedores (`revisor`, `postgres`, `mongo`, `metabase`, `sitio`, `acceso`).
+1. Genera `deploy/.env` con contraseñas aleatorias para PostgreSQL, MongoDB, Metabase y el portal.
+2. Construye y levanta los contenedores (`sitio` (nginx), `portal`, `revisor` (trabajador), `postgres`, `mongo`, `metabase`).
 3. Espera a Metabase, crea el administrador, la conexión a los datos y los dos tableros.
 4. Arranca la primera revisión de la próxima entrega.
 
@@ -82,7 +82,7 @@ El sitio está pensado para quedar detrás de un proxy reverso con HTTPS y una U
 no hace falta autenticación en el proxy.
 
 ```
-navegador ──HTTPS──▶ proxy reverso ──HTTP──▶ servidor:SITIO_PORT (nginx «sitio») ──▶ «acceso» (sesión)
+navegador ──HTTPS──▶ proxy reverso ──HTTP──▶ servidor:SITIO_PORT (nginx «sitio») ──▶ portal y /metabase/
 ```
 
 Lo que debe hacer el proxy:
@@ -92,7 +92,7 @@ Lo que debe hacer el proxy:
 | Reenviar a `http://<servidor>:<SITIO_PORT>/` | Es el único puerto que se publica |
 | Enviar `X-Forwarded-Proto: https` | La cookie de sesión se marca `Secure` |
 | Si usa una ruta (`/fis/`), quitar el prefijo al reenviar | Todos los enlaces del sitio son relativos y funcionan bajo cualquier ruta |
-| Agregar HSTS si lo desea | nginx del sitio ya envía `X-Frame-Options`, CSP, `nosniff` y `noindex` |
+| Agregar HSTS si lo desea | el portal ya envía CSP, `nosniff`, `noindex` y `no-store` |
 | Chequeo de salud: `GET /salud` | Responde `ok` sin sesión y sin datos |
 
 Ejemplo con nginx como proxy, bajo `/fis/`:
@@ -112,7 +112,9 @@ ponga `SITIO_BIND=127.0.0.1` y apunte el túnel a `http://127.0.0.1:<SITIO_PORT>
 
 Cuando el sitio ya solo se use por HTTPS, ponga `SITIO_HTTPS=1` en `deploy/.env` (la cookie viaja
 solo cifrada aunque el proxy no envíe la cabecera) y aplique con
-`docker compose -f deploy/docker-compose.yml up -d acceso`.
+`docker compose -f deploy/docker-compose.yml up -d portal`. Ponga también la URL pública en
+`SITIO_URL` (por ejemplo `https://<dominio>/fis`) y aplique con `up -d metabase`: Metabase la necesita
+para que los tableros incrustados carguen.
 
 ### Firewall
 
@@ -148,7 +150,7 @@ cambia nada en el servidor):
 ssh -N -p <puerto-ssh> -L 50060:127.0.0.1:50060 -L 50061:127.0.0.1:50061 <usuario>@<servidor>
 ```
 
-Con el túnel abierto: sitio en http://localhost:50060 y Metabase en http://localhost:50061.
+Con el túnel abierto: portal en http://localhost:50060 (Metabase, dentro de él en `/metabase/`).
 
 ## 5. Credenciales de acceso y cuentas para colegas
 
@@ -158,15 +160,15 @@ Las credenciales del profesor quedan en `deploy/.env` del servidor (permiso 600)
 grep -E '^(SITIO_USUARIO|SITIO_PASSWORD|MB_ADMIN_EMAIL|MB_ADMIN_PASSWORD)=' ~/fis_edu_reviewer/deploy/.env
 ```
 
-Cada colega puede tener su propia cuenta en el sitio (la contraseña se guarda con PBKDF2 en el
-volumen de datos, nunca en el repositorio):
+El usuario de `deploy/.env` es el primer administrador. Las demás cuentas se crean en el portal
+(**Administración → Nuevo usuario**) y se guardan en PostgreSQL con PBKDF2. También por consola:
 
 ```bash
-cd ~/fis_edu_reviewer/deploy && docker compose exec revisor python -m reviewer usuario agregar <usuario>
+cd ~/fis_edu_reviewer/deploy && docker compose exec revisor python -m reviewer usuario agregar <usuario> --admin
 ```
 
-Pide la contraseña (mínimo 10 caracteres) o, si se deja vacía, genera una y la muestra una sola vez.
-`usuario listar` muestra las cuentas y `usuario quitar <usuario>` elimina una. La sesión dura 12 horas
+Genera una contraseña y la muestra una sola vez (o use la de la variable `CLAVE_NUEVA`).
+`usuario listar` muestra las cuentas y `usuario quitar <usuario>` desactiva una. La sesión dura 12 horas
 (`SITIO_SESION_HORAS`); tras 5 intentos fallidos la cuenta espera 5 minutos.
 
 ## 6. Cargar entregas pasadas
@@ -175,7 +177,7 @@ La revisión automática solo evalúa la próxima entrega. Para cargar las anter
 instalar a mitad de semestre):
 
 ```bash
-cd ~/fis_edu_reviewer/deploy && docker compose exec revisor sh -c 'for e in entrega1 entrega2; do python -m reviewer revisar-todos --entrega $e --ia --salida /datos/historico; done; python -m reviewer sitio --salida /datos/sitio'
+cd ~/fis_edu_reviewer/deploy && docker compose exec revisor sh -c 'for e in entrega1 entrega2; do python -m reviewer revisar-todos --entrega $e --ia --salida /datos/historico; done'
 ```
 
 ## 7. Comprobar que quedó bien

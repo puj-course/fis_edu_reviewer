@@ -5,7 +5,7 @@
 | [../README.md](../README.md) | Todos | Qué es el agente y cómo correrlo localmente |
 | [../ARQUITECTURA.md](../ARQUITECTURA.md) | Quien mantenga el código | Componentes, flujo de una revisión, modelo de datos, verificación de IA, operación, límites y calibración |
 | [INSTALACION.md](INSTALACION.md) | Quien instale el servidor | Requisitos, credenciales, instalación, firewall, carga de entregas pasadas, problemas frecuentes |
-| [GUIA_PROFESOR.md](GUIA_PROFESOR.md) | El profesor | Cómo leer el sitio, la pre-nota, el uso de IA y el factor individual; preparar sustentaciones |
+| [GUIA_PROFESOR.md](GUIA_PROFESOR.md) | El profesor | Cómo usar el portal, la pre-nota, el uso de IA y el factor individual; preparar sustentaciones |
 
 ## Mapa rápido del código
 
@@ -19,8 +19,10 @@ reviewer/cli.py ── orquesta ──► collect.py  (GitHub: commits, issues, 
                               ├► qualitative.py + llm.py (DeepSeek: criterios cualitativos y preguntas)
                               ├► report.py   (informes Markdown del equipo y del profesor)
                               ├► store.py    (PostgreSQL + MongoDB)
-                              └► sitio.py    (sitio web del profesor)
-deploy/ ── Docker Compose: revisor, postgres, mongo, metabase, sitio (nginx)
+                              └► store.py    (PostgreSQL + MongoDB)
+portal.py ── aplicación web ──► sitio.py (páginas) · configuracion.py (curso y rúbricas en la base)
+trabajador.py ── cola de revisiones del portal y revisión programada
+deploy/ ── Docker Compose: sitio (nginx), portal, revisor (trabajador), postgres, mongo, metabase
 ```
 
 ## Temas pendientes (plan para la próxima cohorte)
@@ -36,7 +38,6 @@ Ordenados por impacto en la calidad de la evaluación:
 4. **GitFlow del curso.** Ajustar la verificación al flujo que efectivamente se enseña.
 5. **Retroalimentación semanal a los equipos.** Activar `--publicar` y las plantillas de
    `plantilla-equipo/` en `Repository_Template_FIS` desde el primer día del semestre.
-6. **Acceso sin túnel.** Abrir en el firewall del servidor los puertos del sitio y de Metabase, o
-   publicarlos detrás del proxy de la universidad con HTTPS.
+6. **Acceso sin túnel.** Publicar el portal detrás del proxy reverso con HTTPS y poner esa URL en `SITIO_URL`.
 7. **Respaldos.** Programar `pg_dump` diario de la base `fis` fuera del servidor.
 8. **Token con más vida.** Regenerar el token de GitHub con 366 días y documentar quién lo renueva.

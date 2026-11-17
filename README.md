@@ -16,7 +16,7 @@ oral, que es donde la rúbrica premia a quien entiende su propio trabajo.
 ## Documentación
 
 - [docs/INSTALACION.md](docs/INSTALACION.md): instalar en un servidor, paso a paso.
-- [docs/GUIA_PROFESOR.md](docs/GUIA_PROFESOR.md): cómo leer el sitio, la pre-nota y el uso de IA.
+- [docs/GUIA_PROFESOR.md](docs/GUIA_PROFESOR.md): cómo usar el portal, leer la pre-nota y el uso de IA.
 - [ARQUITECTURA.md](ARQUITECTURA.md): cómo funciona por dentro.
 - [docs/README.md](docs/README.md): índice y temas pendientes.
 
@@ -30,8 +30,10 @@ reviewer/checks.py      verificaciones deterministas y nivel sugerido por criter
 reviewer/llm.py         cliente de DeepSeek + anonimización de estudiantes
 reviewer/qualitative.py criterios cualitativos y preguntas de sustentación (IA)
 reviewer/report.py      informe del equipo, informe del profesor y tablero HTML
-reviewer/sitio.py       sitio web del profesor (panorama, el agente, equipos, estudiantes, uso de IA)
-reviewer/acceso.py      inicio de sesión del sitio y cuentas de colegas
+reviewer/portal.py      portal web del profesor (Flask): usuarios, revisiones bajo demanda, rúbricas, tableros
+reviewer/sitio.py       páginas del portal con los datos vivos de PostgreSQL
+reviewer/trabajador.py  atiende la cola de revisiones y la revisión programada
+reviewer/configuracion.py configuración del curso y rúbricas guardadas en la base, con historial
 reviewer/marca.py       identidad visual Javeriana / FIS
 .github/workflows/      revisión programada (lunes 6 a. m.) y pruebas
 plantilla-equipo/       archivos para copiar a Repository_Template_FIS

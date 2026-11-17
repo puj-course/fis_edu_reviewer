@@ -40,13 +40,15 @@ agregar SITIO_BIND "${SITIO_BIND:-0.0.0.0}"
 agregar SITIO_SECRETO "$(secreto)$(secreto)"
 # 1 cuando el sitio se publique solo por HTTPS (proxy reverso): la cookie de sesión viaja solo cifrada.
 agregar SITIO_HTTPS 0
+# URL con la que se entra al portal (la del proxy reverso cuando exista). Metabase la usa para incrustar tableros.
+agregar SITIO_URL "http://localhost:$(sed -n 's/^SITIO_PORT=//p' .env)"
 
 if ! grep -q '^FIS_GH_TOKEN=.\+' .env; then
   echo "Falta FIS_GH_TOKEN en deploy/.env: edítelo y vuelva a ejecutar." >&2
   exit 1
 fi
 
-docker compose up -d --build
+docker compose up -d --build --remove-orphans
 
 echo "Esperando a Metabase (la primera vez tarda uno o dos minutos)..."
 n=0
@@ -58,12 +60,10 @@ done
 
 docker compose exec -T revisor python /app/deploy/metabase_setup.py
 
-puerto="$(sed -n 's/^METABASE_PORT=//p' .env)"
 psitio="$(sed -n 's/^SITIO_PORT=//p' .env)"
 echo
 echo "Listo."
-echo "  Sitio del profesor: http://<este-servidor>:${psitio}   (SITIO_USUARIO / SITIO_PASSWORD en deploy/.env)"
-echo "  Metabase:           http://127.0.0.1:${puerto} en el servidor (MB_ADMIN_EMAIL / MB_ADMIN_PASSWORD en deploy/.env)"
-echo "  Cuentas para colegas: docker compose -f deploy/docker-compose.yml exec revisor python -m reviewer usuario agregar <usuario>"
+echo "  Portal del profesor: $(sed -n 's/^SITIO_URL=//p' .env)  (servidor: puerto ${psitio}; SITIO_USUARIO / SITIO_PASSWORD en deploy/.env)"
+echo "  Usuarios, revisiones bajo demanda, rúbricas y tableros se administran desde el portal."
 echo "  Publicación con URL propia: ver docs/INSTALACION.md, sección «Publicar con un proxy reverso»."
-echo "La primera revisión ya está corriendo: docker compose -f deploy/docker-compose.yml logs -f revisor"
+echo "La primera revisión programada empieza en segundos: docker compose -f deploy/docker-compose.yml logs -f revisor"

@@ -1,11 +1,11 @@
 # Stack del agente revisor FIS. Se levanta con:   sh deploy/instalar.sh
 #
-#   revisor   revisa los repos del período cada INTERVALO_HORAS (solo lectura sobre GitHub)
+#   revisor   trabajador: atiende las revisiones pedidas en el portal y la programada (solo lectura sobre GitHub)
 #   postgres  datos relacionales de las revisiones (esquema fis) + base interna de Metabase
 #   mongo     evidencia cruda y resultado completo de cada revisión
-#   metabase  tableros (http://<servidor>:${METABASE_PORT:-3000})
-#   sitio     sitio web del profesor (http://<servidor>:${SITIO_PORT:-8090}); publicarlo con un proxy reverso HTTPS
-#   acceso    página de ingreso y sesiones del sitio (sin puerto propio: solo lo consulta nginx)
+#   metabase  tableros; se ven dentro del portal (/tableros) y en /metabase/
+#   portal    aplicación web del profesor sobre PostgreSQL (usuarios, revisiones, rúbricas, tableros)
+#   sitio     nginx, única entrada: http://<servidor>:${SITIO_PORT:-8090}; publicarlo con un proxy reverso HTTPS
 name: fis
 
 services:
@@ -59,6 +59,8 @@ services:
       MB_DB_PASS: ${MB_DB_PASSWORD}
       MB_SITE_LOCALE: es
       MB_ANON_TRACKING_ENABLED: "false"
+      # Metabase se publica dentro del portal en /metabase/ (para incrustar los tableros).
+      MB_SITE_URL: ${SITIO_URL:-http://localhost:8090}/metabase
       JAVA_TIMEZONE: America/Bogota
     ports:
       - "${METABASE_BIND:-127.0.0.1}:${METABASE_PORT:-3000}:3000"
@@ -74,15 +76,15 @@ services:
     networks: [fis]
 
   sitio:
+    # Puerta de entrada: nginx delante del portal y de Metabase (solo con sesión iniciada).
     image: nginx:1.27-alpine
     restart: unless-stopped
     volumes:
-      - informes:/datos:ro
       - ./nginx.conf:/etc/nginx/conf.d/default.conf:ro
     ports:
       - "${SITIO_BIND:-0.0.0.0}:${SITIO_PORT:-8090}:80"
     depends_on:
-      acceso:
+      portal:
         condition: service_healthy
     healthcheck:
       test: ["CMD-SHELL", "wget -qO- http://127.0.0.1/salud | grep -q ok"]
@@ -91,25 +93,31 @@ services:
       retries: 3
     networks: [fis]
 
-  acceso:
+  portal:
+    # Aplicación web del profesor: datos en vivo, usuarios, revisiones bajo demanda, rúbricas y tableros.
     build:
       context: ..
       dockerfile: deploy/Dockerfile
     restart: unless-stopped
-    command: ["python", "-m", "reviewer", "acceso", "--puerto", "8000"]
+    command: ["gunicorn", "-w", "3", "-b", "0.0.0.0:8000", "--timeout", "60", "--access-logfile", "-", "reviewer.portal:crear_app()"]
     environment:
+      FIS_PG_DSN: postgresql://fis:${PG_PASSWORD}@postgres:5432/fis
+      FIS_GH_TOKEN: ${FIS_GH_TOKEN:-}
+      FIS_IA_DISPONIBLE: ${DEEPSEEK_API_KEY:+1}
       SITIO_USUARIO: ${SITIO_USUARIO:-profesor}
       SITIO_PASSWORD: ${SITIO_PASSWORD:?ejecute deploy/instalar.sh}
       SITIO_SECRETO: ${SITIO_SECRETO:?ejecute deploy/instalar.sh}
       SITIO_SESION_HORAS: ${SITIO_SESION_HORAS:-12}
       SITIO_HTTPS: ${SITIO_HTTPS:-0}
-    volumes:
-      - informes:/datos:ro
+    depends_on:
+      postgres:
+        condition: service_healthy
     healthcheck:
-      test: ["CMD", "python", "-c", "import urllib.request as u; u.urlopen('http://127.0.0.1:8000/')"]
+      test: ["CMD", "python", "-c", "import urllib.request as u; u.urlopen('http://127.0.0.1:8000/salud')"]
       interval: 30s
       timeout: 5s
       retries: 3
+      start_period: 20s
     networks: [fis]
 
   revisor:
@@ -129,14 +137,12 @@ services:
       FIS_SONAR_TOKEN: ${FIS_SONAR_TOKEN:-}
       FIS_PG_DSN: postgresql://fis:${PG_PASSWORD}@postgres:5432/fis
       FIS_MONGO_URI: mongodb://fis:${MONGO_PASSWORD}@mongo:27017/?authSource=admin
-      ENTREGA: ${ENTREGA:-auto}
       INTERVALO_HORAS: ${INTERVALO_HORAS:-24}
       # Datos para deploy/metabase_setup.py
       MB_URL: http://metabase:3000
       MB_ADMIN_EMAIL: ${MB_ADMIN_EMAIL:-admin@fis.local}
       MB_ADMIN_PASSWORD: ${MB_ADMIN_PASSWORD}
       LECTURA_PASSWORD: ${LECTURA_PASSWORD}
-      SITIO_USUARIO: ${SITIO_USUARIO:-profesor}
     volumes:
       - informes:/datos
     depends_on:

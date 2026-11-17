@@ -181,8 +181,9 @@ def parametro(filtro: str, ids: dict[str, int]) -> dict:
             "values_source_config": {"card_id": ids[tarjeta], "value_field": ["field", campo, {"base-type": "type/Text"}]}}
 
 
-def tableros(col: int, ids: dict[str, int]) -> None:
+def tableros(col: int, ids: dict[str, int]) -> list[dict]:
     existentes = {d["name"]: d["id"] for d in api("GET", "/api/dashboard") if d.get("collection_id") == col and not d.get("archived")}
+    listos = []
     for nombre, (filtros, celdas) in TABLEROS.items():
         did = existentes.get(nombre) or api("POST", "/api/dashboard", name=nombre, collection_id=col)["id"]
         dashcards = []
@@ -197,10 +198,43 @@ def tableros(col: int, ids: dict[str, int]) -> None:
             })
         api("PUT", f"/api/dashboard/{did}", parameters=[parametro(f, ids) for f in filtros], dashcards=dashcards)
         print(f"Tablero listo: {nombre} -> /dashboard/{did}")
+        listos.append({"id": did, "nombre": nombre.replace("FIS · ", ""), "filtros": filtros})
+    return listos
+
+
+def ajuste(clave: str, valor) -> bool:
+    r = S.put(f"{MB}/api/setting/{clave}", json={"value": valor}, timeout=60)
+    return r.status_code < 400
+
+
+def embebido(lista: list[dict]) -> None:
+    """Static embedding: el portal muestra los tableros firmando cada URL con el secreto de Metabase."""
+    import secrets
+
+    import psycopg
+
+    if not (ajuste("enable-embedding-static", True) or ajuste("enable-embedding", True)):
+        print("AVISO: no se pudo activar el embebido en Metabase; los tableros no se mostrarán en el portal")
+        return
+    r = S.get(f"{MB}/api/setting/embedding-secret-key", timeout=60)
+    secreto = r.json() if r.status_code == 200 and r.text.strip() else None
+    if not secreto:
+        secreto = secrets.token_hex(32)
+        ajuste("embedding-secret-key", secreto)
+    for t in lista:
+        api("PUT", f"/api/dashboard/{t['id']}", enable_embedding=True, embedding_params={f: "enabled" for f in t["filtros"]})
+    sys.path.insert(0, "/app")
+    from reviewer import configuracion
+
+    with psycopg.connect(os.environ["FIS_PG_DSN"]) as con:
+        configuracion.asegurar_esquema(con)
+        configuracion.guardar(con, "metabase", {"secreto": secreto, "tableros": [{"id": t["id"], "nombre": t["nombre"]} for t in lista]},
+                              "instalador")
+    print(f"Tableros incrustables en el portal: {len(lista)}")
 
 
 if __name__ == "__main__":
     iniciar_sesion()
     db = base_de_datos()
     col = coleccion()
-    tableros(col, tarjetas(db, col))
+    embebido(tableros(col, tarjetas(db, col)))

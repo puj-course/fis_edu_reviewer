@@ -3,6 +3,8 @@
     python -m reviewer revisar --repo puj-course/FIS_2630_1204_G1 --entrega entrega1
     python -m reviewer revisar-todos --entrega auto --ia
     python -m reviewer revisar-todos --entrega auto --ia --publicar
+    python -m reviewer trabajador            # cola de revisiones del portal
+    python -m reviewer usuario agregar ana --admin
 """
 from __future__ import annotations
 
@@ -53,7 +55,7 @@ def elegir_entrega(cfg: dict, pedida: str) -> str:
 
 
 def revisar_repo(gh: GitHub, llm: DeepSeek, cfg: dict, repo: str, entrega: str, args, almacen=None) -> dict:
-    rubrica = cargar_yaml(cfg["entregas"][entrega]["rubrica"])
+    rubrica = cfg["_rubricas"][entrega] if "_rubricas" in cfg else cargar_yaml(cfg["entregas"][entrega]["rubrica"])
     # Antes de la fecha de entrega se revisa "a hoy"; después, la foto del día de la entrega.
     hasta = args.hasta or min(cfg["entregas"][entrega]["fecha"], dt.date.today().isoformat())
     carpeta = os.path.join(args.salida, repo.split("/")[-1], entrega)
@@ -109,37 +111,38 @@ def publicar(gh: GitHub, cfg: dict, repo: str, ruta_md: str) -> None:
     print(f"    publicado en {repo}#{numero}")
 
 
-def administrar_usuarios(accion: str, login: str | None) -> int:
-    """Cuentas de colegas para el sitio (además del usuario principal de deploy/.env)."""
-    import getpass
+def administrar_usuarios(accion: str, login: str | None, rol: str) -> int:
+    """Cuentas del portal (en PostgreSQL). Normalmente se administran desde el portal."""
+    import secrets
 
-    from . import acceso
+    import psycopg
 
-    if accion == "listar":
-        principal = os.environ.get("SITIO_USUARIO") or "profesor"
-        print(f"{principal} (principal, en deploy/.env)")
-        for u in sorted(acceso.leer_usuarios()):
-            print(u)
-        return 0
-    if not login:
-        sys.exit("Indique el usuario: python -m reviewer usuario agregar <usuario>")
-    if accion == "quitar":
-        acceso.guardar_usuario(login, None)
-        print(f"Usuario {login} eliminado.")
-        return 0
-    clave = os.environ.get("CLAVE_NUEVA")
-    if not clave:
-        if sys.stdin.isatty():
-            clave = getpass.getpass(f"Contraseña para {login} (mínimo 10 caracteres; vacía = generar una): ")
-        if not clave:
-            import secrets
+    from . import configuracion, portal
 
-            clave = secrets.token_urlsafe(12)
-            print(f"Contraseña generada para {login}: {clave}")
-    if len(clave) < 10:
-        sys.exit("La contraseña debe tener al menos 10 caracteres.")
-    acceso.guardar_usuario(login, clave)
-    print(f"Usuario {login} listo. Ya puede ingresar al sitio.")
+    dsn = os.environ.get("FIS_PG_DSN")
+    if not dsn:
+        sys.exit("Falta FIS_PG_DSN: los usuarios viven en la base de datos.")
+    with psycopg.connect(dsn) as con:
+        configuracion.asegurar_esquema(con)
+        if accion == "listar":
+            with con.cursor() as cur:
+                cur.execute("SELECT login, nombre, rol, activo FROM portal.usuarios ORDER BY rol, login")
+                for u in cur.fetchall():
+                    print(f"{u[0]:20} {u[2]:8} {'activo' if u[3] else 'inactivo':9} {u[1]}")
+            return 0
+        if not login:
+            sys.exit("Indique el usuario: python -m reviewer usuario agregar <usuario>")
+        if accion == "quitar":
+            with con.cursor() as cur:
+                cur.execute("UPDATE portal.usuarios SET activo = false, version = version + 1 WHERE login = %s", (login,))
+            con.commit()
+            print(f"Usuario {login} desactivado.")
+            return 0
+        clave = os.environ.get("CLAVE_NUEVA") or secrets.token_urlsafe(12)
+        if len(clave) < 10:
+            sys.exit("La contraseña debe tener al menos 10 caracteres.")
+        portal.crear_usuario(con, login, login, clave, rol)
+        print(f"Usuario {login} ({rol}) listo." + ("" if os.environ.get("CLAVE_NUEVA") else f" Contraseña: {clave}"))
     return 0
 
 
@@ -158,38 +161,27 @@ def main(argv=None) -> int:
         s.add_argument("--ia", action="store_true", help="usar DeepSeek para los criterios cualitativos")
         s.add_argument("--publicar", action="store_true", help="comentar el informe formativo en el repo del equipo")
         s.add_argument("--sin-wiki", action="store_true")
-    s = sub.add_parser("sitio", help="generar el sitio web del profesor desde PostgreSQL")
-    s.add_argument("--salida", default="salida/sitio")
-    s.add_argument("--config", default="config/course.yaml")
-    s = sub.add_parser("acceso", help="servicio de ingreso (inicio de sesión) del sitio del profesor")
-    s.add_argument("--puerto", type=int, default=8000)
-    s = sub.add_parser("usuario", help="administrar las cuentas de colegas en el sitio del profesor")
+    sub.add_parser("trabajador", help="atender la cola de revisiones del portal (y la revisión programada)")
+    s = sub.add_parser("usuario", help="administrar cuentas del portal (también se hace desde el portal)")
     s.add_argument("accion", choices=["agregar", "quitar", "listar"])
     s.add_argument("login", nargs="?")
+    s.add_argument("--admin", action="store_true")
     args = p.parse_args(argv)
     if args.comando == "revisar-todos":
         args.evidencia = None
 
     cargar_env()
-    if args.comando == "acceso":
-        from . import acceso
+    if args.comando == "trabajador":
+        from . import trabajador
 
-        acceso.servir(args.puerto)
+        trabajador.ejecutar()
         return 0
     if args.comando == "usuario":
-        return administrar_usuarios(args.accion, args.login)
-    if args.comando == "sitio":
-        from . import sitio
+        return administrar_usuarios(args.accion, args.login, "admin" if args.admin else "colega")
+    from . import configuracion
 
-        dsn = os.environ.get("FIS_PG_DSN")
-        if not dsn:
-            sys.exit("Falta FIS_PG_DSN para generar el sitio.")
-        cfg = cargar_yaml(args.config)
-        rubricas = {k: cargar_yaml(v["rubrica"]) for k, v in cfg.get("entregas", {}).items()}
-        n = sitio.generar(dsn, args.salida, cfg, rubricas)
-        print(f"Sitio generado en {args.salida} ({n} estudiantes)")
-        return 0
-    cfg = cargar_yaml(args.config)
+    # Con base de datos, la configuración y las rúbricas son las que el profesor administra en el portal.
+    cfg = configuracion.cargar(os.environ.get("FIS_PG_DSN"), args.config)
     gh, llm = GitHub(), DeepSeek()
     # `todas` revisa las tres entregas, cada una con su fecha de corte.
     entregas = sorted(cfg["entregas"], key=lambda k: cfg["entregas"][k]["fecha"]) if args.entrega == "todas"         else [elegir_entrega(cfg, args.entrega)]

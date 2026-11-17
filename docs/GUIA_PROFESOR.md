@@ -8,14 +8,24 @@ profesor: el agente propone y deja la evidencia a la vista.
 1. Lee de GitHub, en solo lectura, todos los repos `FIS_<periodo>_*` de la organización.
 2. Aplica la rúbrica de la próxima entrega (según las fechas de `config/course.yaml`).
 3. Para los criterios cualitativos pide a DeepSeek una propuesta de nivel con justificación.
-4. Guarda todo en PostgreSQL y MongoDB, regenera el sitio y actualiza Metabase.
+4. Guarda todo en PostgreSQL y MongoDB; el portal y Metabase lo muestran al instante.
 
 Nada se publica en los repos de los estudiantes mientras no se active `--publicar`.
 
-## El sitio del profesor
+## El portal del profesor
 
 Se entra con usuario y contraseña desde la propia página de ingreso; **Salir** (arriba a la derecha)
-cierra la sesión. Cada colega puede tener su cuenta (ver `docs/INSTALACION.md`, paso 5).
+cierra la sesión. Todo lo que se ve sale en el momento de la base de datos.
+
+| Para… | Vaya a |
+|---|---|
+| Ver si un equipo ya actualizó y revisarlo ya | **Revisiones**: último push frente a última revisión, botón «Revisar»; o en el equipo, «Revisar este equipo ahora» |
+| Seguir una revisión | **Revisiones → #n**: estado, duración y registro en vivo; se puede cancelar |
+| Ver con qué se evalúa cada entrega | **Rúbricas**: criterios, pesos, niveles y qué verifica el agente; los administradores las editan |
+| Ver los tableros de Metabase | **Tableros** (incrustados, con filtros por equipo y entrega) |
+| Cambiar fechas de corte, equipos o la revisión programada | **Administración** |
+| Dar acceso a un colega | **Administración → Nuevo usuario** (la contraseña se muestra una sola vez) |
+| Cambiar su contraseña | Su nombre, arriba a la derecha → **Mi cuenta** |
 
 | Página | Para qué usarla |
 |---|---|

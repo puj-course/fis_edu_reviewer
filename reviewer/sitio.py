@@ -1,25 +1,13 @@
-"""Sitio web del profesor: avance de cada equipo, hallazgos, uso de IA y récord por estudiante.
+"""Páginas del portal del profesor, armadas en cada petición con los datos vivos de PostgreSQL.
 
-Genera páginas HTML estáticas a partir de PostgreSQL, con la identidad de la Pontificia
-Universidad Javeriana y de Fundamentos de Ingeniería de Software:
-
-    index.html                 panorama del curso (indicadores, gráficas y equipos)
-    agente.html                qué hace el agente, cómo trabaja y qué revisa en cada entrega
-    ia.html                    uso de IA en todo el curso
-    estudiantes.html           listado de estudiantes
-    equipo/<equipo>.html       detalle de un equipo
-    estudiante/<login>.html    récord de un estudiante
-
-    python -m reviewer sitio --salida /datos/sitio
-
-Todos los enlaces son relativos: el sitio funciona igual en la raíz de un dominio o bajo una
-ruta de un proxy reverso (https://servidor/fis/).
+Identidad de la Pontificia Universidad Javeriana y de Fundamentos de Ingeniería de Software.
+Las rutas son limpias (`equipos/<equipo>`, `estudiantes/<login>`) y los enlaces relativos, así el
+portal funciona igual en la raíz de un dominio o bajo una ruta de un proxy reverso.
 """
 from __future__ import annotations
 
 import datetime as dt
 import html
-import os
 from collections import defaultdict
 
 from . import marca
@@ -38,7 +26,8 @@ a{color:var(--acc)}code{font-size:12px}
 .marca .u{font-size:11px;letter-spacing:.12em;text-transform:uppercase;opacity:.8}
 .marca .c{font-family:Georgia,"Times New Roman",serif;font-size:19px;font-weight:700;line-height:1.15}
 .fila{display:flex;align-items:center;justify-content:space-between;gap:12px;flex-wrap:wrap}
-.salir{color:#fff;opacity:.85;font-size:13px;text-decoration:none;border:1px solid rgba(255,255,255,.35);border-radius:999px;padding:4px 12px}
+.salir{color:#fff;opacity:.85;font:inherit;font-size:13px;background:none;cursor:pointer;border:1px solid rgba(255,255,255,.35);border-radius:999px;padding:4px 12px}
+.quien a{color:#fff;font-size:13px;opacity:.9}.enlinea{display:inline;margin:0}
 .salir:hover{opacity:1;background:rgba(255,255,255,.1)}
 nav{display:flex;gap:4px;flex-wrap:wrap;overflow-x:auto}
 nav a{color:#dce6f7;text-decoration:none;font-weight:600;font-size:14px;padding:8px 12px;border-radius:8px 8px 0 0;white-space:nowrap}
@@ -95,25 +84,45 @@ font-weight:800;font-size:12px;width:22px;height:22px;border-radius:50%;display:
 .mini{display:inline-block;width:70px;height:7px;border-radius:4px;background:var(--grid);overflow:hidden;vertical-align:middle;margin-right:6px}
 .mini span{display:block;height:100%}
 details summary{cursor:pointer;color:var(--acc);font-weight:600}
+.btn{display:inline-block;background:var(--jav-azul);color:#fff;border:0;border-radius:10px;padding:9px 16px;font:inherit;font-weight:700;
+text-decoration:none;cursor:pointer}.btn:hover{background:var(--jav-azul-osc)}.btn.sec{background:var(--card);color:var(--acc);border:1px solid var(--bd)}
+.btn.peligro{background:var(--bad)}.btn.peq{padding:4px 10px;font-size:13px;border-radius:8px}
+.flash{border-radius:10px;padding:10px 14px;margin-bottom:14px}.flash.ok{background:var(--okbg);color:var(--ok)}.flash.bad{background:var(--badbg);color:var(--bad)}
+form.f{display:grid;gap:10px}form.f label{font-weight:600;font-size:13px;display:block;margin-bottom:4px}
+.f input[type=text],.f input[type=password],.f input[type=date],.f input[type=number],.f select,.f textarea{width:100%;padding:9px 11px;border:1px solid var(--bd);
+border-radius:9px;background:var(--bg);color:var(--fg);font:inherit}.f textarea{font-family:ui-monospace,Consolas,monospace;font-size:13px;min-height:420px}
+.campos{display:grid;gap:12px;grid-template-columns:repeat(auto-fit,minmax(200px,1fr))}
+pre.log{background:#0b1220;color:#d6e2ff;border-radius:10px;padding:14px;overflow:auto;max-height:520px;font-size:12.5px;white-space:pre-wrap}
+.e-pendiente{background:var(--grid);color:var(--fg)}.e-en_curso{background:color-mix(in srgb,var(--s1) 20%,transparent);color:var(--fg)}
+.e-terminada{background:var(--okbg);color:var(--ok)}.e-fallida{background:var(--badbg);color:var(--bad)}.e-cancelada{background:var(--warnbg);color:var(--warn)}
+iframe.tablero{width:100%;min-height:1200px;border:1px solid var(--bd);border-radius:12px;background:#fff}
+.niveles{display:grid;gap:8px;grid-template-columns:repeat(auto-fit,minmax(220px,1fr));margin-top:10px}
+.nivel{border:1px solid var(--bd);border-radius:10px;padding:10px;font-size:13px}.nivel b{display:block}
 footer{color:var(--mut);font-size:12px;text-align:center;padding:24px 16px;border-top:1px solid var(--bd)}
 @media (max-width:600px){.hero h1{font-size:23px}.marca .c{font-size:16px}.kpi .v{font-size:24px}}
 """
 
-PAGINAS = [("index.html", "Panorama"), ("agente.html", "El agente"), ("estudiantes.html", "Estudiantes"), ("ia.html", "Uso de IA")]
+NAV = [("", "Panorama"), ("revisiones", "Revisiones"), ("rubricas", "Rúbricas"), ("tableros", "Tableros"),
+       ("estudiantes", "Estudiantes"), ("ia", "Uso de IA"), ("agente", "El agente")]
 
 
-def _pagina(titulo: str, cuerpo: str, profundidad: int = 0, activo: str = "") -> str:
-    r = "../" * profundidad
-    ahora = dt.datetime.now().strftime("%d/%m/%Y %H:%M")
-    nav = "".join(f'<a href="{r}{ruta}"{" class=on" if ruta == activo else ""}>{nombre}</a>' for ruta, nombre in PAGINAS)
-    return f"""<!doctype html><html lang="es"><head><meta charset="utf-8">
+def pagina(titulo: str, cuerpo: str, r: str = "", activo: str = "", usuario: dict | None = None, aviso: str = "",
+           tipo_aviso: str = "ok", refrescar: int = 0) -> str:
+    """Documento completo. `r` = prefijo relativo hasta la raíz del portal ("", "../", ...)."""
+    items = NAV + ([("admin", "Administración")] if usuario and usuario.get("rol") == "admin" else [])
+    nav = "".join(f'<a href="{r}{ruta}"{" class=on" if ruta == activo else ""}>{nombre}</a>' for ruta, nombre in items)
+    quien = (f'<span class="quien"><a href="{r}cuenta">{E(usuario["nombre"])}</a></span>' if usuario else "")
+    salir = f'<form method="post" action="{r}salir" class="enlinea"><input type="hidden" name="csrf" value="{E(usuario.get("csrf", ""))}">'             f'<button class="salir">Salir</button></form>' if usuario else ""
+    msj = f'<div class="flash {tipo_aviso}" role="status">{aviso}</div>' if aviso else ""
+    meta = f'<meta http-equiv="refresh" content="{refrescar}">' if refrescar else ""
+    return f"""<!doctype html><html lang="es"><head><meta charset="utf-8">{meta}
 <meta name="viewport" content="width=device-width,initial-scale=1"><meta name="robots" content="noindex,nofollow">
 <title>{E(titulo)} · {marca.PRODUCTO}</title><style>{CSS}</style></head>
 <body><header class="barra"><div class="in"><div class="fila">
-<a class="marca" href="{r}index.html">{marca.escudo(42)}<span><span class="u">{marca.UNIVERSIDAD}</span><br>
-<span class="c">{marca.CURSO}</span></span></a><a class="salir" href="{r}salir">Salir</a></div>
+<a class="marca" href="{r or './'}">{marca.escudo(42)}<span><span class="u">{marca.UNIVERSIDAD}</span><br>
+<span class="c">{marca.CURSO}</span></span></a><div class="fila" style="gap:10px">{quien}{salir}</div></div>
 <nav>{nav}</nav></div></header>
-<main>{cuerpo}</main><footer>{marca.PRODUCTO} · {marca.FACULTAD}<br>Actualizado el {ahora}.
+<main>{msj}{cuerpo}</main><footer>{marca.PRODUCTO} · {marca.FACULTAD}<br>
 Las notas son sugerencias: la calificación la decide el profesor.</footer>
 </body></html>"""
 
@@ -374,7 +383,7 @@ def _pagina_agente(cfg: dict, rubricas: dict, resumen: dict) -> str:
             f'<span class="b"><span style="width:{min(float(c["peso"]) * 300, 100):.0f}%"></span></span>' for c in crit)
         estado = ("<span class='chip warn'>próxima</span>" if clave == proxima
                   else "<span class='chip ok'>cerrada</span>" if ent["fecha"] < hoy else "<span class='chip neu'>pendiente</span>")
-        tarjetas.append(f'<div class="card ent{" prox" if clave == proxima else ""}"><div class="fila"><h3>{E(rub.get("nombre", clave))}</h3>{estado}</div>'
+        tarjetas.append(f'<div class="card ent{" prox" if clave == proxima else ""}"><div class="fila"><h3><a href="rubricas/{E(clave)}">{E(rub.get("nombre", clave))}</a></h3>{estado}</div>'
                         f'<div class="mut" style="font-size:13px">Corte: {dt.date.fromisoformat(ent["fecha"]):%d/%m/%Y}</div>'
                         f'<div class="peso">{pesos}</div></div>')
     grupos = "".join(
@@ -408,23 +417,21 @@ la sustentación, donde se premia entender el propio trabajo.</p></div>
 nunca nombres, usuarios ni correos.</p></div></div>""")
 
 
-# ---------------------------------------------------------------- generación
-def generar(dsn: str, salida: str, cfg: dict | None = None, rubricas: dict | None = None) -> int:
-    import psycopg
+# ---------------------------------------------------------------- datos en vivo
+class Datos:
+    """Todo lo que muestran las páginas, leído de PostgreSQL en cada petición."""
 
-    cfg, rubricas = cfg or {}, rubricas or {}
-    os.makedirs(os.path.join(salida, "equipo"), exist_ok=True)
-    os.makedirs(os.path.join(salida, "estudiante"), exist_ok=True)
-    with psycopg.connect(dsn) as con, con.cursor() as cur:
+    def __init__(self, cur):
         q = lambda sql, *a: _consultar(cur, sql, *a)
-        revisiones = q("SELECT * FROM fis.v_revision_actual ORDER BY equipo, entrega")
-        if not revisiones:
-            _sin_datos(salida, cfg, rubricas)
-            return 0
+        self.revisiones = q("SELECT * FROM fis.v_revision_actual ORDER BY equipo, entrega")
+        self.vacio = not self.revisiones
+        if self.vacio:
+            self.rev_eq, self.equipo_de, self.sonar_eq = {}, {}, {}
+            return
         historia = q("""SELECT DISTINCT ON (equipo, entrega, revisada::date) equipo, entrega, entrega_nombre,
                                revisada::date AS dia, pre_nota
                         FROM fis.revisiones ORDER BY equipo, entrega, revisada::date, id DESC""")
-        criterios = q("SELECT * FROM fis.v_criterios ORDER BY equipo, entrega, orden")
+        self.criterios = q("SELECT * FROM fis.v_criterios ORDER BY equipo, entrega, orden")
         fallas = q("SELECT equipo, entrega, criterio, verificacion, indicador FROM fis.v_indicadores WHERE cumple = false ORDER BY equipo, entrega")
         aporte = q("SELECT * FROM fis.v_aporte ORDER BY equipo, entrega, commits DESC")
         record = q("""SELECT DISTINCT ON (a.login, r.entrega, r.revisada::date) a.login, r.equipo, r.entrega, r.entrega_nombre,
@@ -435,124 +442,138 @@ def generar(dsn: str, salida: str, cfg: dict | None = None, rubricas: dict | Non
         uso_ia = q("SELECT * FROM fis.v_uso_ia ORDER BY equipo, entrega, nivel, login")
         senales = q("SELECT * FROM fis.v_senales ORDER BY equipo, entrega, login")
         preguntas = q("SELECT * FROM fis.v_preguntas ORDER BY equipo, entrega, login, orden")
-        semanas = q("""SELECT equipo, login, semana, commits, lineas FROM fis.v_commits_semana ORDER BY semana""")
+        semanas = q("SELECT equipo, login, semana, commits, lineas FROM fis.v_commits_semana ORDER BY semana")
         commits_top = q("""SELECT * FROM (SELECT repo, equipo, login, sha, fecha, mensaje, adiciones,
                                   row_number() OVER (PARTITION BY repo, login ORDER BY fecha DESC) AS n
                            FROM fis.commits WHERE NOT es_merge) t WHERE n <= 12""")
-        hay_sonar = q("SELECT to_regclass('fis.sonar') IS NOT NULL AS hay")[0]["hay"]
-        sonar_eq = {r["equipo"]: r for r in q("SELECT * FROM fis.sonar")} if hay_sonar else {}
-        actividad = {r["equipo"]: r for r in q("""
+        self.sonar_eq = {r["equipo"]: r for r in q("SELECT * FROM fis.sonar")}
+        self.actividad = {r["equipo"]: r for r in q("""
             SELECT equipo, count(*) FILTER (WHERE NOT es_merge) AS commits,
                    round(100.0 * avg(convencional::int) FILTER (WHERE NOT es_merge)) AS conv,
                    round(100.0 * avg(referencia_issue::int) FILTER (WHERE NOT es_merge)) AS ref,
                    max(fecha) AS ultimo FROM fis.commits GROUP BY equipo""")}
+        self.revisada = {r["equipo"]: r["revisada"] for r in q("SELECT equipo, max(revisada) AS revisada FROM fis.revisiones GROUP BY equipo")}
 
-    # Uso de IA y señales: solo la revisión más reciente de cada equipo (ya incluye todos los commits);
-    # mostrar las de cada entrega repetiría el mismo commit varias veces.
-    nombre_entrega = {r["entrega"]: r["entrega_nombre"] for r in revisiones}
-    ultima_de = {}
-    for r in revisiones:
-        if r["equipo"] not in ultima_de or str(r["hasta"]) > str(ultima_de[r["equipo"]][1]):
-            ultima_de[r["equipo"]] = (r["entrega"], r["hasta"])
-    vigente = lambda f: ultima_de.get(f["equipo"], (None,))[0] == f["entrega"]
-    uso_ia = [f for f in uso_ia if vigente(f)]
-    senales = [f for f in senales if vigente(f)]
+        # Uso de IA y señales: solo la revisión más reciente de cada equipo (ya incluye todos los commits).
+        self.nombre_entrega = {r["entrega"]: r["entrega_nombre"] for r in self.revisiones}
+        ultima_de = {}
+        for r in self.revisiones:
+            if r["equipo"] not in ultima_de or str(r["hasta"]) > str(ultima_de[r["equipo"]][1]):
+                ultima_de[r["equipo"]] = (r["entrega"], r["hasta"])
+        vigente = lambda f: ultima_de.get(f["equipo"], (None,))[0] == f["entrega"]
+        self.uso_ia = [f for f in uso_ia if vigente(f)]
+        senales = [f for f in senales if vigente(f)]
 
-    por = lambda filas, *claves: _agrupar(filas, claves)
-    rev_eq, crit_eq, fal_eq = por(revisiones, "equipo"), por(criterios, "equipo", "entrega"), por(fallas, "equipo", "entrega")
-    ap_eq, ia_eq, sen_eq = por(aporte, "equipo"), por(uso_ia, "equipo"), por(senales, "equipo")
-    preg_lg, rec_lg, ia_lg = por(preguntas, "login"), por(record, "login"), por(uso_ia, "login")
-    sem_lg, sem_eq, top_lg, hist_eq = por(semanas, "login"), por(semanas, "equipo"), por(commits_top, "login"), por(historia, "equipo")
-    sen_lg = por(senales, "login")
-    repo_de = {r["equipo"]: r["repo"] for r in revisiones}
-    equipo_de = {}
-    for a in aporte:
-        equipo_de.setdefault(a["login"], a["equipo"])
+        por = lambda filas, *claves: _agrupar(filas, claves)
+        self.rev_eq, self.crit_eq, self.fal_eq = por(self.revisiones, "equipo"), por(self.criterios, "equipo", "entrega"), por(fallas, "equipo", "entrega")
+        self.ap_eq, self.ia_eq, self.sen_eq = por(aporte, "equipo"), por(self.uso_ia, "equipo"), por(senales, "equipo")
+        self.preg_lg, self.rec_lg, self.ia_lg = por(preguntas, "login"), por(record, "login"), por(self.uso_ia, "login")
+        self.sem_lg, self.sem_eq, self.top_lg, self.hist_eq = por(semanas, "login"), por(semanas, "equipo"), por(commits_top, "login"), por(historia, "equipo")
+        self.sen_lg = por(senales, "login")
+        self.repo_de = {r["equipo"]: r["repo"] for r in self.revisiones}
+        self.equipo_de = {}
+        for a in aporte:
+            self.equipo_de.setdefault(a["login"], a["equipo"])
+        self.entregas = sorted({(r["entrega"], r["entrega_nombre"]) for r in self.revisiones})
+        self.ent_actual = max((e for e, _ in self.entregas), default=None)
 
+    @staticmethod
     def ia_cuenta(filas):
         d = {(f["tipo"], f["login"], f["detalle"]) for f in filas if f["nivel"] == "directa"}
         i = {(f["tipo"], f["login"]) for f in filas if f["nivel"] == "indirecta"}
         return len(d), len(i)
 
-    def ia_estudiante(login):
-        return ia_cuenta([f for f in uso_ia if f["login"] == login])
 
-    entregas = sorted({(r["entrega"], r["entrega_nombre"]) for r in revisiones})
-    ent_actual = max((e for e, _ in entregas), default=None)
-    periodo = (cfg.get("periodo") or (revisiones[0]["repo"].split("_") + ["", ""])[1])
-    total_commits = sum(int(a.get("commits") or 0) for a in actividad.values())
-    notas_actuales = [float(r["pre_nota"]) for r in revisiones if r["entrega"] == ent_actual and r["pre_nota"] is not None]
-    promedio = sum(notas_actuales) / len(notas_actuales) if notas_actuales else None
-    total_d = sum(ia_cuenta(v)[0] for v in ia_eq.values())
-    estados_ia = [ia_estudiante(l) for l in equipo_de]
-    n_dir = sum(1 for d, _ in estados_ia if d)
-    n_ind = sum(1 for d, i in estados_ia if not d and i)
-    resumen = {"equipos": len(rev_eq), "estudiantes": len(equipo_de)}
+def _sin_datos(r: str, titulo: str) -> str:
+    return _hero("Aún no hay revisiones", titulo) + (
+        f'<div class="aviso">Todavía no hay revisiones guardadas. Puede <a href="{r}revisiones">lanzar una revisión ahora</a>; '
+        f'mientras tanto, vea <a href="{r}agente">qué hace el agente</a>.</div>')
 
-    # ------------------------------------------------------------ index
+
+# ---------------------------------------------------------------- páginas
+def panorama(d: Datos, cfg: dict, r: str) -> str:
+    if d.vacio:
+        return _sin_datos(r, "Panorama del curso")
+    ia_cuenta = Datos.ia_cuenta
+    ent = d.ent_actual
+    nombre_actual = E(dict(d.entregas).get(ent, ""))
     tarjetas = []
-    for eq, filas in rev_eq.items():
-        d, i = ia_cuenta(ia_eq.get(eq, []))
+    for eq, filas in d.rev_eq.items():
+        di, ii = ia_cuenta(d.ia_eq.get(eq, []))
         notas = "".join(f'<div class="fila" style="margin:3px 0"><span>{E(f["entrega_nombre"])}</span>{_chip_nota(f["pre_nota"])}</div>' for f in filas)
-        act = actividad.get(eq, {})
-        tarjetas.append(f"""<div class="card"><h3><a href="equipo/{E(eq)}.html">{E(eq)}</a></h3>
+        act = d.actividad.get(eq, {})
+        tarjetas.append(f"""<div class="card"><h3><a href="{r}equipos/{E(eq)}">{E(eq)}</a></h3>
 <div class="mut" style="font-size:13px">{filas[0]['integrantes']} integrantes · {_num(act.get('commits'))} commits · último {E(str(act.get('ultimo') or '')[:10])}</div>
-<div style="margin:10px 0">{notas}</div><div>{_chip_ia(d, i)}</div></div>""")
-    barras_eq = _barras_h([(eq, next((f["pre_nota"] for f in filas if f["entrega"] == ent_actual), None), f"equipo/{eq}.html")
-                           for eq, filas in rev_eq.items()])
-    series = {eq: [(f["dia"], f["pre_nota"]) for f in filas if f["entrega"] == ent_actual] for eq, filas in hist_eq.items()}
+<div style="margin:10px 0">{notas}</div><div>{_chip_ia(di, ii)}</div></div>""")
+    barras_eq = _barras_h([(eq, next((f["pre_nota"] for f in filas if f["entrega"] == ent), None), f"{r}equipos/{eq}")
+                           for eq, filas in d.rev_eq.items()])
+    series = {eq: [(f["dia"], f["pre_nota"]) for f in filas if f["entrega"] == ent] for eq, filas in d.hist_eq.items()}
     nombres_cr, celdas = [], {}
-    for c in criterios:
-        if c["entrega"] != ent_actual:
+    for c in d.criterios:
+        if c["entrega"] != ent:
             continue
         if c["criterio"] not in nombres_cr:
             nombres_cr.append(c["criterio"])
         if c["puntaje"] is not None:
             celdas[(c["equipo"], c["criterio"])] = float(c["puntaje"])
     hallazgos = []
-    for eq in rev_eq:
-        ultima = max((e for e, _ in entregas if (eq, e) in fal_eq), default=None)
+    for eq in d.rev_eq:
+        ultima = max((e for e, _ in d.entregas if (eq, e) in d.fal_eq), default=None)
         if ultima:
-            hallazgos.append([f'<a href="equipo/{E(eq)}.html">{E(eq)}</a>', E(dict(entregas)[ultima]),
-                              "<ul class='lst'>" + "".join(f"<li>{E(f['indicador'])}</li>" for f in fal_eq[(eq, ultima)][:5]) + "</ul>"])
-    nombre_actual = E(dict(entregas).get(ent_actual, ""))
-    cuerpo = (_hero(f"Período {E(str(periodo))} · {nombre_actual}", "Panorama del curso",
-                    "Revisión automática diaria de los repositorios de los equipos en GitHub (solo lectura).")
-              + _kpis([(str(len(rev_eq)), "equipos"), (str(len(equipo_de)), "estudiantes"), (_num(total_commits), "commits revisados"),
-                       (f"{promedio:.2f}" if promedio is not None else "—", f"pre-nota promedio · {dict(entregas).get(ent_actual, '')}"),
-                       (str(total_d), "evidencias directas de IA")])
-              + f"""<div class="aviso" style="margin-top:14px"><b>Uso de IA:</b> {'ningún equipo tiene evidencia directa de herramientas de IA en GitHub' if not total_d else f'{total_d} evidencia(s) directa(s)'}.
-<a href="ia.html">Ver el detalle por estudiante</a>.</div>
+            hallazgos.append([f'<a href="{r}equipos/{E(eq)}">{E(eq)}</a>', E(dict(d.entregas)[ultima]),
+                              "<ul class='lst'>" + "".join(f"<li>{E(f['indicador'])}</li>" for f in d.fal_eq[(eq, ultima)][:5]) + "</ul>"])
+    notas_act = [float(x["pre_nota"]) for x in d.revisiones if x["entrega"] == ent and x["pre_nota"] is not None]
+    promedio = sum(notas_act) / len(notas_act) if notas_act else None
+    total_d = sum(ia_cuenta(v)[0] for v in d.ia_eq.values())
+    ultima_rev = max(d.revisada.values()) if d.revisada else None
+    return (_hero(f"Período {E(str(cfg.get('periodo', '')))} · {nombre_actual}", "Panorama del curso",
+                  f"Datos en vivo de la base del agente. Última revisión: {ultima_rev:%d/%m/%Y %H:%M}." if ultima_rev else "",
+                  f'<a class="btn" href="{r}revisiones">Revisar ahora</a>')
+            + _kpis([(str(len(d.rev_eq)), "equipos"), (str(len(d.equipo_de)), "estudiantes"),
+                     (_num(sum(int(a.get("commits") or 0) for a in d.actividad.values())), "commits revisados"),
+                     (f"{promedio:.2f}" if promedio is not None else "—", f"pre-nota promedio · {dict(d.entregas).get(ent, '')}"),
+                     (str(total_d), "evidencias directas de IA")])
+            + f"""<div class="aviso" style="margin-top:14px"><b>Uso de IA:</b> {'ningún equipo tiene evidencia directa de herramientas de IA en GitHub' if not total_d else f'{total_d} evidencia(s) directa(s)'}.
+<a href="{r}ia">Ver el detalle por estudiante</a>.</div>
 <div class="g2" style="margin-top:14px"><div class="card"><h3>Pre-nota por equipo · {nombre_actual}</h3>{barras_eq}</div>
 <div class="card"><h3>Evolución de la pre-nota · {nombre_actual}</h3>{_lineas(series)}</div></div>
-<h2>Mapa de criterios · {nombre_actual}</h2><p class="mut">Puntaje sugerido por criterio (0 a 5). «profesor» = criterio que solo califica el profesor.</p>
-{_mapa_calor(list(rev_eq), nombres_cr, celdas, lambda eq: f"equipo/{eq}.html")}
+<h2>Mapa de criterios · {nombre_actual}</h2><p class="mut">Puntaje sugerido por criterio (0 a 5). «profesor» = criterio que solo califica el profesor.
+<a href="{r}rubricas/{E(ent or '')}">Ver la rúbrica</a>.</p>
+{_mapa_calor(list(d.rev_eq), nombres_cr, celdas, lambda eq: f"{r}equipos/{eq}")}
 <h2>Calidad del código (Sonar)</h2><p class="mut">Resultados de los análisis que corre el pipeline de cada equipo.
 Bugs / vulnerabilidades / code smells / security hotspots abiertos. Calificaciones de A (mejor) a E.</p>
-{_tabla(["Equipo"] + ENC_SONAR, [_fila_sonar(sonar_eq[eq], f'<a href="equipo/{E(eq)}.html">{E(eq)}</a>') for eq in rev_eq if eq in sonar_eq])}
+{_tabla(["Equipo"] + ENC_SONAR, [_fila_sonar(d.sonar_eq[eq], f'<a href="{r}equipos/{E(eq)}">{E(eq)}</a>') for eq in d.rev_eq if eq in d.sonar_eq])}
 <h2>Equipos</h2><div class="grid">{''.join(tarjetas)}</div>
 <h2>Hallazgos principales (última entrega revisada)</h2>{_tabla(['Equipo', 'Entrega', 'Lo que no se cumple'], hallazgos)}""")
-    _escribir(salida, "index.html", _pagina("Panorama", cuerpo, activo="index.html"))
-    _escribir(salida, "agente.html", _pagina("El agente", _pagina_agente(cfg, rubricas, resumen), activo="agente.html"))
 
-    # ------------------------------------------------------------ ia.html
-    filas_ia = []
-    for login in sorted(equipo_de, key=lambda l: (equipo_de[l], l.lower())):
-        propias = [f for f in uso_ia if f["login"] == login]
-        d, i = ia_cuenta(propias)
+
+def agente(d: Datos, cfg: dict, r: str) -> str:
+    cuerpo = _pagina_agente(cfg, cfg.get("_rubricas", {}), {"equipos": len(d.rev_eq), "estudiantes": len(d.equipo_de)})
+    return cuerpo.replace('href="rubricas/', f'href="{r}rubricas/')
+
+
+def uso_ia(d: Datos, r: str) -> str:
+    if d.vacio:
+        return _sin_datos(r, "Uso de inteligencia artificial")
+    ia_cuenta = Datos.ia_cuenta
+    filas_ia, n_dir, n_ind = [], 0, 0
+    for login in sorted(d.equipo_de, key=lambda l: (d.equipo_de[l], l.lower())):
+        propias = [f for f in d.uso_ia if f["login"] == login]
+        di, ii = ia_cuenta(propias)
+        n_dir += bool(di)
+        n_ind += bool(not di and ii)
         detalle = "<ul class='lst'>" + "".join(
             f"<li>{'🔴' if f['nivel'] == 'directa' else '🟡'} {E(f['detalle'])}</li>"
             for f in {(f['nivel'], f['detalle']): f for f in propias}.values()) + "</ul>" if propias else '<span class="mut">—</span>'
-        filas_ia.append([f'<a href="estudiante/{E(login)}.html">{E(login)}</a>', E(equipo_de[login]), _chip_ia(d, i), detalle])
-    de_equipo = [f for f in uso_ia if f["login"] == "(equipo)"]
+        filas_ia.append([f'<a href="{r}estudiantes/{E(login)}">{E(login)}</a>', E(d.equipo_de[login]), _chip_ia(di, ii), detalle])
+    de_equipo = [f for f in d.uso_ia if f["login"] == "(equipo)"]
     filas_eq = [[E(f["equipo"]), "🔴 directa" if f["nivel"] == "directa" else "🟡 indirecta", E(f["detalle"]),
-                 " ".join(_gh(f["repo"], r) for r in (f["refs"] or "").split(",")[:6] if r.strip())]
+                 " ".join(_gh(f["repo"], x) for x in (f["refs"] or "").split(",")[:6] if x.strip())]
                 for f in {(f["equipo"], f["detalle"]): f for f in de_equipo}.values()]
-    dona_ia = _dona([("Con evidencia directa", n_dir, "var(--bad)"), ("Solo señales indirectas", n_ind, "var(--s2)"),
-                     ("Sin evidencia ni señales", len(equipo_de) - n_dir - n_ind, "var(--ok)")],
-                    str(len(equipo_de)), "estudiantes")
-    cuerpo = _hero("Transparencia en el proceso", "Uso de inteligencia artificial") + f"""
-<div class="g2"><div class="card"><h3>Estudiantes por resultado</h3>{dona_ia}</div>
+    dona = _dona([("Con evidencia directa", n_dir, "var(--bad)"), ("Solo señales indirectas", n_ind, "var(--s2)"),
+                  ("Sin evidencia ni señales", len(d.equipo_de) - n_dir - n_ind, "var(--ok)")], str(len(d.equipo_de)), "estudiantes")
+    return _hero("Transparencia en el proceso", "Uso de inteligencia artificial") + f"""
+<div class="g2"><div class="card"><h3>Estudiantes por resultado</h3>{dona}</div>
 <div class="aviso"><b>Qué se verifica.</b> Evidencia <b>directa</b> (🔴): firmas de asistentes en commits, PR o issues
 (<code>Co-authored-by: Copilot/Claude</code>, «Generated with…»); commits, PR o revisiones hechos por cuentas de agentes de IA;
 ramas creadas por agentes (<code>copilot/…</code>, <code>claude/…</code>); archivos de configuración de asistentes en el repo
@@ -563,109 +584,110 @@ sin contar archivos generados (lockfiles, imágenes, datos).<br><br>
 rastro. Las señales indirectas solo dicen a quién y sobre qué commit preguntar en la sustentación.</div></div>
 <h2>Por estudiante</h2>{_tabla(['Estudiante', 'Equipo', 'Resultado', 'Detalle'], filas_ia)}
 <h2>A nivel de equipo</h2>{_tabla(['Equipo', 'Tipo', 'Detalle', 'Referencias'], filas_eq)}"""
-    _escribir(salida, "ia.html", _pagina("Uso de IA", cuerpo, activo="ia.html"))
 
-    # ------------------------------------------------------------ equipos
-    for eq, filas in rev_eq.items():
-        repo = repo_de[eq]
-        secciones = []
-        for f in filas:
-            ent = f["entrega"]
-            crs = crit_eq.get((eq, ent), [])
-            cr = [[E(c["criterio"]), f'{float(c["peso"]) * 100:.0f}%', f'<span class="chip t-{E(c["tipo"])}">{E(c["tipo"])}</span>',
-                   E(c["nivel"] or "—"), _chip_nota(c["puntaje"]) if c["puntaje"] is not None else '<span class="mut">profesor</span>',
-                   E(c["justificacion_ia"] or "")] for c in crs]
-            grafica = _barras_h([(c["criterio"], c["puntaje"], "") for c in crs if c["puntaje"] is not None])
-            fl = "".join(f"<li><b>{E(x['verificacion'])}:</b> {E(x['indicador'])}</li>" for x in fal_eq.get((eq, ent), []))
-            secciones.append(f"""<h2>{E(f['entrega_nombre'])} <span class="mut" style="font-weight:400;font-size:14px">corte {f['hasta']} · pre-nota</span>
-{_chip_nota(f['pre_nota'])} <span class="mut" style="font-weight:400;font-size:14px">({float(f['peso_cubierto']) * 100:.0f}% del peso)</span></h2>
+
+def equipo(d: Datos, r: str, eq: str, acciones: str = "") -> str | None:
+    if eq not in d.rev_eq:
+        return None
+    ia_cuenta = Datos.ia_cuenta
+    filas = d.rev_eq[eq]
+    repo = d.repo_de[eq]
+    secciones = []
+    for f in filas:
+        ent = f["entrega"]
+        crs = d.crit_eq.get((eq, ent), [])
+        cr = [[E(c["criterio"]), f'{float(c["peso"]) * 100:.0f}%', f'<span class="chip t-{E(c["tipo"])}">{E(c["tipo"])}</span>',
+               E(c["nivel"] or "—"), _chip_nota(c["puntaje"]) if c["puntaje"] is not None else '<span class="mut">profesor</span>',
+               E(c["justificacion_ia"] or "")] for c in crs]
+        grafica = _barras_h([(c["criterio"], c["puntaje"], "") for c in crs if c["puntaje"] is not None])
+        fl = "".join(f"<li><b>{E(x['verificacion'])}:</b> {E(x['indicador'])}</li>" for x in d.fal_eq.get((eq, ent), []))
+        secciones.append(f"""<h2>{E(f['entrega_nombre'])} <span class="mut" style="font-weight:400;font-size:14px">corte {f['hasta']} · pre-nota</span>
+{_chip_nota(f['pre_nota'])} <span class="mut" style="font-weight:400;font-size:14px">({float(f['peso_cubierto']) * 100:.0f}% del peso) ·
+<a href="{r}rubricas/{E(ent)}">rúbrica</a></span></h2>
 <div class="card" style="margin-bottom:12px">{grafica}</div>
 {_tabla(['Criterio', 'Peso', 'Tipo', 'Nivel', 'Puntaje', 'Justificación (IA)'], cr)}
-<details style="margin-top:10px"><summary>Indicadores que no se cumplen ({len(fal_eq.get((eq, ent), []))})</summary><ul class="lst">{fl}</ul></details>""")
-        ultima = filas[-1]["entrega"]
-        miembros = [a for a in ap_eq.get(eq, []) if a["entrega"] == ultima]
-        integrantes = [[f'<a href="../estudiante/{E(a["login"])}.html">{E(a["login"])}</a>', a["commits"],
-                        f'{a["semanas_activas"]}/{a["semanas_equipo"]}', a["issues_cerradas"], a["prs"], a["revisiones"],
-                        _num(a["lineas"]), f'<b>{a["factor_sugerido"]}</b>'] for a in miembros]
-        por_sem = defaultdict(int)
-        for s in sem_eq.get(eq, []):
-            por_sem[str(s["semana"])] += s["commits"]
-        d, i = ia_cuenta(ia_eq.get(eq, []))
-        ia_items = "".join(f"<li>{'🔴' if x['nivel'] == 'directa' else '🟡'} <b>{E(x['login'])}</b>: {E(x['detalle'])}</li>"
-                           for x in {(x['login'], x['detalle']): x for x in ia_eq.get(eq, [])}.values())
-        sn = "".join(f"<li><b>{E(x['login'])}</b>: {E(x['detalle'])}</li>" for x in {(x['login'], x['detalle']): x for x in sen_eq.get(eq, [])}.values())
-        act = actividad.get(eq, {})
-        dona = _dona([(a["login"], float(a["commits"] or 0), SERIES[k % len(SERIES)]) for k, a in enumerate(miembros)],
-                     _num(sum(int(a["commits"] or 0) for a in miembros)), "commits")
-        cuerpo = (_hero(f'Equipo · <a href="https://github.com/{E(repo)}" style="color:inherit">{E(repo)}</a>', E(eq))
-                  + _kpis([(_chip_nota(filas[-1]["pre_nota"]), f"pre-nota · {filas[-1]['entrega_nombre']}"),
-                           (str(filas[0]["integrantes"]), "integrantes"), (_num(act.get("commits")), "commits"),
-                           (f'{act.get("conv") or 0:.0f}%', "commits convencionales"), (f'{act.get("ref") or 0:.0f}%', "commits con issue")])
-                  + f"""<div class="g2" style="margin-top:14px"><div class="card"><h3>Reparto de commits</h3>{dona}</div>
+<details style="margin-top:10px"><summary>Indicadores que no se cumplen ({len(d.fal_eq.get((eq, ent), []))})</summary><ul class="lst">{fl}</ul></details>""")
+    ultima = filas[-1]["entrega"]
+    miembros = [a for a in d.ap_eq.get(eq, []) if a["entrega"] == ultima]
+    integrantes = [[f'<a href="{r}estudiantes/{E(a["login"])}">{E(a["login"])}</a>', a["commits"],
+                    f'{a["semanas_activas"]}/{a["semanas_equipo"]}', a["issues_cerradas"], a["prs"], a["revisiones"],
+                    _num(a["lineas"]), f'<b>{a["factor_sugerido"]}</b>'] for a in miembros]
+    por_sem = defaultdict(int)
+    for s in d.sem_eq.get(eq, []):
+        por_sem[str(s["semana"])] += s["commits"]
+    di, ii = ia_cuenta(d.ia_eq.get(eq, []))
+    ia_items = "".join(f"<li>{'🔴' if x['nivel'] == 'directa' else '🟡'} <b>{E(x['login'])}</b>: {E(x['detalle'])}</li>"
+                       for x in {(x['login'], x['detalle']): x for x in d.ia_eq.get(eq, [])}.values())
+    sn = "".join(f"<li><b>{E(x['login'])}</b>: {E(x['detalle'])}</li>" for x in {(x['login'], x['detalle']): x for x in d.sen_eq.get(eq, [])}.values())
+    act = d.actividad.get(eq, {})
+    dona = _dona([(a["login"], float(a["commits"] or 0), SERIES[k % len(SERIES)]) for k, a in enumerate(miembros)],
+                 _num(sum(int(a["commits"] or 0) for a in miembros)), "commits")
+    revisada = d.revisada.get(eq)
+    return (_hero(f'Equipo · <a href="https://github.com/{E(repo)}" style="color:inherit">{E(repo)}</a>', E(eq),
+                  f"Última revisión: {revisada:%d/%m/%Y %H:%M}." if revisada else "", acciones)
+            + _kpis([(_chip_nota(filas[-1]["pre_nota"]), f"pre-nota · {filas[-1]['entrega_nombre']}"),
+                     (str(filas[0]["integrantes"]), "integrantes"), (_num(act.get("commits")), "commits"),
+                     (f'{act.get("conv") or 0:.0f}%', "commits convencionales"), (f'{act.get("ref") or 0:.0f}%', "commits con issue")])
+            + f"""<div class="g2" style="margin-top:14px"><div class="card"><h3>Reparto de commits</h3>{dona}</div>
 <div class="card"><h3>Commits por semana</h3>{_barras(sorted(por_sem.items()))}</div></div>
 <h2>Integrantes</h2>{_tabla(['Estudiante', 'Commits', 'Semanas', 'Issues cerradas', 'PRs', 'Revisiones', 'Líneas', 'Factor sugerido'], integrantes, {1, 3, 4, 5, 6, 7})}
-<h2>Calidad del código (Sonar)</h2>{_tabla(ENC_SONAR, [_fila_sonar(sonar_eq[eq])]) if eq in sonar_eq else '<p class="mut">El equipo no tiene Sonar configurado o el agente no pudo leer sus resultados.</p>'}
-<div class="g2" style="margin-top:6px"><div><h2>Uso de IA {_chip_ia(d, i)}</h2><ul class="lst">{ia_items or '<li class="mut">Sin señales.</li>'}</ul></div>
+<h2>Calidad del código (Sonar)</h2>{_tabla(ENC_SONAR, [_fila_sonar(d.sonar_eq[eq])]) if eq in d.sonar_eq else '<p class="mut">El equipo no tiene Sonar configurado o el agente no pudo leer sus resultados.</p>'}
+<div class="g2" style="margin-top:6px"><div><h2>Uso de IA {_chip_ia(di, ii)}</h2><ul class="lst">{ia_items or '<li class="mut">Sin señales.</li>'}</ul></div>
 <div><h2>Señales de proceso</h2><ul class="lst">{sn or '<li class="mut">Ninguna.</li>'}</ul></div></div>
 {''.join(secciones)}""")
-        _escribir(salida, f"equipo/{eq}.html", _pagina(eq, cuerpo, 1))
 
-    # ------------------------------------------------------------ estudiantes
-    filas_est = []
-    for login, eq in sorted(equipo_de.items(), key=lambda kv: (kv[1], kv[0].lower())):
-        repo = repo_de[eq]
-        rec = rec_lg.get(login, [])
-        filas_rec = [[E(r["entrega_nombre"]), f'{r["hasta"]:%d/%m/%Y}', f'{r["dia"]:%d/%m/%Y}', r["commits"], f'{r["semanas_activas"]}/{r["semanas_equipo"]}',
-                      r["issues_cerradas"], r["prs"], r["revisiones"], _num(r["lineas"]),
-                      r["indice_aporte"], f'<b>{r["factor_sugerido"]}</b>'] for r in rec]
-        propias = ia_lg.get(login, [])
-        d, i = ia_cuenta(propias)
-        ia_items = "".join(
-            f"<li>{'🔴' if x['nivel'] == 'directa' else '🟡'} {E(x['detalle'])}<br>"
-            + " ".join(_gh(repo, r) for r in (x["refs"] or "").split(",")[:8] if r.strip()) + "</li>"
-            for x in {(x['nivel'], x['detalle']): x for x in propias}.values())
-        sn = "".join(f"<li>{E(x['detalle'])}</li>" for x in {x['detalle']: x for x in sen_lg.get(login, [])}.values())
-        pq = defaultdict(list)
-        for p in preg_lg.get(login, []):
-            pq[p["entrega"]].append(p["pregunta"])
-        preguntas_html = "".join(f"<h3>{E(nombre_entrega.get(ent, ent))}</h3><ol>" + "".join(f"<li>{E(x)}</li>" for x in ps) + "</ol>" for ent, ps in sorted(pq.items()))
-        ultimos = [[f'{str(c["fecha"])[:10]}', _gh(repo, c["sha"][:7]), E((c["mensaje"] or "")[:110]), c["adiciones"] or 0]
-                   for c in sorted(top_lg.get(login, []), key=lambda c: str(c["fecha"]), reverse=True)]
-        ultimo = rec[-1] if rec else {}
-        cuerpo = (_hero(f'Estudiante · equipo <a href="../equipo/{E(eq)}.html">{E(eq)}</a>', E(login),
-                        f'<a href="https://github.com/{E(login)}">perfil en GitHub</a>')
-                  + _kpis([(str(ultimo.get("commits", 0)), "commits"),
-                           (f'{ultimo.get("semanas_activas", 0)}/{ultimo.get("semanas_equipo", 0)}', "semanas activas"),
-                           (str(ultimo.get("issues_cerradas", 0)), "issues cerradas"), (str(ultimo.get("prs", 0)), "PR"),
-                           (str(ultimo.get("factor_sugerido", "—")), "factor sugerido")])
-                  + f"""<div class="g2" style="margin-top:14px"><div class="card"><h3>Commits por semana</h3>
-{_barras([(str(s['semana']), s['commits']) for s in sem_lg.get(login, []) if s['equipo'] == eq])}</div>
-<div class="card"><h3>Uso de IA {_chip_ia(d, i)}</h3><ul class="lst">{ia_items or '<li class="mut">Sin evidencia directa ni señales indirectas.</li>'}</ul>
+
+def estudiante(d: Datos, r: str, login: str) -> str | None:
+    if login not in d.equipo_de:
+        return None
+    eq = d.equipo_de[login]
+    repo = d.repo_de[eq]
+    rec = d.rec_lg.get(login, [])
+    filas_rec = [[E(x["entrega_nombre"]), f'{x["hasta"]:%d/%m/%Y}', f'{x["dia"]:%d/%m/%Y}', x["commits"], f'{x["semanas_activas"]}/{x["semanas_equipo"]}',
+                  x["issues_cerradas"], x["prs"], x["revisiones"], _num(x["lineas"]), x["indice_aporte"], f'<b>{x["factor_sugerido"]}</b>'] for x in rec]
+    propias = d.ia_lg.get(login, [])
+    di, ii = Datos.ia_cuenta(propias)
+    ia_items = "".join(
+        f"<li>{'🔴' if x['nivel'] == 'directa' else '🟡'} {E(x['detalle'])}<br>"
+        + " ".join(_gh(repo, y) for y in (x["refs"] or "").split(",")[:8] if y.strip()) + "</li>"
+        for x in {(x['nivel'], x['detalle']): x for x in propias}.values())
+    sn = "".join(f"<li>{E(x['detalle'])}</li>" for x in {x['detalle']: x for x in d.sen_lg.get(login, [])}.values())
+    pq = defaultdict(list)
+    for p in d.preg_lg.get(login, []):
+        pq[p["entrega"]].append(p["pregunta"])
+    preguntas_html = "".join(f"<h3>{E(d.nombre_entrega.get(ent, ent))}</h3><ol>" + "".join(f"<li>{E(x)}</li>" for x in ps) + "</ol>" for ent, ps in sorted(pq.items()))
+    ultimos = [[f'{str(c["fecha"])[:10]}', _gh(repo, c["sha"][:7]), E((c["mensaje"] or "")[:110]), c["adiciones"] or 0]
+               for c in sorted(d.top_lg.get(login, []), key=lambda c: str(c["fecha"]), reverse=True)]
+    u = rec[-1] if rec else {}
+    return (_hero(f'Estudiante · equipo <a href="{r}equipos/{E(eq)}">{E(eq)}</a>', E(login),
+                  f'<a href="https://github.com/{E(login)}">perfil en GitHub</a>')
+            + _kpis([(str(u.get("commits", 0)), "commits"), (f'{u.get("semanas_activas", 0)}/{u.get("semanas_equipo", 0)}', "semanas activas"),
+                     (str(u.get("issues_cerradas", 0)), "issues cerradas"), (str(u.get("prs", 0)), "PR"),
+                     (str(u.get("factor_sugerido", "—")), "factor sugerido")])
+            + f"""<div class="g2" style="margin-top:14px"><div class="card"><h3>Commits por semana</h3>
+{_barras([(str(s['semana']), s['commits']) for s in d.sem_lg.get(login, []) if s['equipo'] == eq])}</div>
+<div class="card"><h3>Uso de IA {_chip_ia(di, ii)}</h3><ul class="lst">{ia_items or '<li class="mut">Sin evidencia directa ni señales indirectas.</li>'}</ul>
 <h3 style="margin-top:14px">Señales de proceso</h3><ul class="lst">{sn or '<li class="mut">Ninguna.</li>'}</ul></div></div>
 <h2>Récord por entrega</h2><p class="mut">Una fila por entrega y por día de revisión: así se ve la evolución.</p>
 {_tabla(['Entrega', 'Corte', 'Revisado', 'Commits', 'Semanas', 'Issues cerradas', 'PRs', 'Revisiones', 'Líneas', 'Índice', 'Factor'], filas_rec, {3, 5, 6, 7, 8, 9, 10})}
 <h2>Preguntas para la sustentación</h2><div class="card">{preguntas_html or '<p class="mut">Sin preguntas generadas.</p>'}</div>
 <h2>Últimos commits</h2>{_tabla(['Fecha', 'Commit', 'Mensaje', 'Líneas'], ultimos, {3})}""")
-        _escribir(salida, f"estudiante/{login}.html", _pagina(login, cuerpo, 1))
-        filas_est.append([f'<a href="estudiante/{E(login)}.html">{E(login)}</a>', f'<a href="equipo/{E(eq)}.html">{E(eq)}</a>',
-                          ultimo.get("commits", 0), f'{ultimo.get("semanas_activas", 0)}/{ultimo.get("semanas_equipo", 0)}',
-                          ultimo.get("issues_cerradas", 0), f'<b>{ultimo.get("factor_sugerido", "—")}</b>', _chip_ia(d, i)])
-    _escribir(salida, "estudiantes.html", _pagina("Estudiantes", _hero("Récord individual", "Estudiantes",
-              f"{len(equipo_de)} estudiantes en {len(rev_eq)} equipos. Abra un estudiante para ver su récord y las preguntas de sustentación.")
-              + _tabla(["Estudiante", "Equipo", "Commits", "Semanas", "Issues cerradas", "Factor sugerido", "Uso de IA"], filas_est, {2, 4}),
-              activo="estudiantes.html"))
-    return len(equipo_de)
 
 
-def _sin_datos(salida: str, cfg: dict, rubricas: dict) -> None:
-    """Primera instalación: el sitio ya se ve, aunque la primera revisión siga corriendo."""
-    aviso = _hero("Primera revisión en curso", "Panorama del curso") + (
-        '<div class="aviso">Todavía no hay revisiones guardadas. La primera corrida tarda unos minutos por equipo; '
-        'esta página se actualiza sola cuando termine. Mientras tanto, vea <a href="agente.html">qué hace el agente</a>.</div>')
-    _escribir(salida, "index.html", _pagina("Panorama", aviso, activo="index.html"))
-    _escribir(salida, "agente.html", _pagina("El agente", _pagina_agente(cfg, rubricas, {}), activo="agente.html"))
-    for ruta, nombre in (("estudiantes.html", "Estudiantes"), ("ia.html", "Uso de IA")):
-        _escribir(salida, ruta, _pagina(nombre, _hero("Sin datos aún", nombre), activo=ruta))
+def estudiantes(d: Datos, r: str) -> str:
+    if d.vacio:
+        return _sin_datos(r, "Estudiantes")
+    filas = []
+    for login, eq in sorted(d.equipo_de.items(), key=lambda kv: (kv[1], kv[0].lower())):
+        rec = d.rec_lg.get(login, [])
+        u = rec[-1] if rec else {}
+        di, ii = Datos.ia_cuenta(d.ia_lg.get(login, []))
+        filas.append([f'<a href="{r}estudiantes/{E(login)}">{E(login)}</a>', f'<a href="{r}equipos/{E(eq)}">{E(eq)}</a>',
+                      u.get("commits", 0), f'{u.get("semanas_activas", 0)}/{u.get("semanas_equipo", 0)}',
+                      u.get("issues_cerradas", 0), f'<b>{u.get("factor_sugerido", "—")}</b>', _chip_ia(di, ii)])
+    return (_hero("Récord individual", "Estudiantes",
+                  f"{len(d.equipo_de)} estudiantes en {len(d.rev_eq)} equipos. Abra un estudiante para ver su récord y las preguntas de sustentación.")
+            + _tabla(["Estudiante", "Equipo", "Commits", "Semanas", "Issues cerradas", "Factor sugerido", "Uso de IA"], filas, {2, 4}))
 
 
 def _agrupar(filas: list[dict], claves: tuple) -> dict:
@@ -674,11 +696,3 @@ def _agrupar(filas: list[dict], claves: tuple) -> dict:
         k = f[claves[0]] if len(claves) == 1 else tuple(f[c] for c in claves)
         salida[k].append(f)
     return dict(salida)
-
-
-def _escribir(base: str, ruta: str, contenido: str) -> None:
-    destino = os.path.join(base, ruta)
-    temporal = destino + ".tmp"
-    with open(temporal, "w", encoding="utf-8") as f:
-        f.write(contenido)
-    os.replace(temporal, destino)
